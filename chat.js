@@ -2,7 +2,7 @@ import WebSocket from "ws";
 import readline from "readline";
 import crypto from "crypto";
 
-const SERVER = process.env.CHAT_SERVER || "wss://YOUR-APP.fly.dev";
+const SERVER = process.env.CHAT_SERVER || "wss://chat-cli-7woy.onrender.com";
 const arg = process.argv[2];
 
 let token, host;
