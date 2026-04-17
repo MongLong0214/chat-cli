@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: chat-relay
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
