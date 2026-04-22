@@ -8,7 +8,6 @@ import {
   existsSync,
   readFileSync,
   writeFileSync,
-  statSync,
 } from "fs";
 
 const SERVER = process.env.CHAT_SERVER || "wss://chat-cli-7woy.onrender.com";
@@ -17,7 +16,6 @@ const MAX_PAYLOAD = 64 * 1024;
 const MAX_NAME = 20;
 const KEEPALIVE_MS = 10 * 60 * 1000;
 const WS_PING_MS = 30 * 1000;
-const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
 const USE_COLOR = !process.env.NO_COLOR && process.stdout.isTTY;
 const C = USE_COLOR
@@ -88,34 +86,6 @@ const askName = () =>
 const urlRe = /(https?:\/\/[^\s]+)/g;
 const highlightUrls = (text) =>
   text.replace(urlRe, `${C.link}$1${C.reset}`);
-
-const uploadFile = async (filePath) => {
-  let stats;
-  try {
-    stats = statSync(filePath);
-  } catch (err) {
-    if (err.code === "ENOENT") throw new Error(`파일 없음: ${filePath}`);
-    throw new Error(`파일 읽기 실패: ${err.message}`);
-  }
-  if (stats.isDirectory()) throw new Error(`디렉토리입니다: ${filePath}`);
-  if (stats.size > UPLOAD_MAX_BYTES) {
-    const mb = (stats.size / 1024 / 1024).toFixed(1);
-    throw new Error(`파일 너무 큼 (${mb}MB > 20MB)`);
-  }
-  const data = readFileSync(filePath);
-  const filename = filePath.split(/[\\/]/).pop() || "file";
-  const fd = new FormData();
-  fd.append("file", new Blob([data]), filename);
-  const res = await fetch("https://0x0.st", {
-    method: "POST",
-    body: fd,
-    headers: { "User-Agent": "chat-cli/1.0 (friend-chat)" },
-  });
-  if (!res.ok) throw new Error(`업로드 실패: HTTP ${res.status}`);
-  const url = (await res.text()).trim();
-  if (!/^https?:\/\//.test(url)) throw new Error(`업로드 실패: ${url}`);
-  return url;
-};
 
 const arg = process.argv[2];
 const envRoom = process.env.CHAT_ROOM;
@@ -378,7 +348,6 @@ const main = async () => {
         "  /quit             종료",
         "  /reset            화면 비우기",
         "  /name <새이름>    내 이름 변경",
-        "  /img <경로>       파일 업로드 후 URL 전송 (최대 20MB)",
         `  /bell             상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})${C.reset}`,
       ];
       printAbovePrompt(lines.join("\n"));
@@ -402,28 +371,15 @@ const main = async () => {
       bellEnabled = !bellEnabled;
       above.warn(`알림음 ${bellEnabled ? "켜짐" : "꺼짐"}`);
     },
-    img: async (rest) => {
-      const path = rest.trim().replace(/^['"]|['"]$/g, "");
-      if (!path) return above.warn("사용법: /img <파일경로>");
-      if (!sharedKey) return above.warn("아직 연결 안 됨");
-      above.info("업로드 중...");
-      try {
-        const url = await uploadFile(path);
-        sendEncrypted({ n: myName, t: url });
-        printAbovePrompt(formatMsg(myName, url, C.me));
-      } catch (err) {
-        above.err(`[오류] ${err.message}`);
-      }
-    },
   };
 
-  rl.on("line", async (line) => {
+  rl.on("line", (line) => {
     if (line.startsWith("/")) {
       const [cmd, ...rest] = line.slice(1).split(" ");
       const fn = Object.hasOwn(commands, cmd) ? commands[cmd] : null;
       if (fn) {
         try {
-          await fn(rest.join(" "));
+          fn(rest.join(" "));
         } catch (err) {
           above.err(`[명령 오류] ${err.message}`);
         }
