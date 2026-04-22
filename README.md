@@ -84,7 +84,7 @@ node chat.js "wss://chat-cli-7woy.onrender.com#abc..."
 |------|------|
 | `/help` | 도움말 |
 | `/quit` | 종료 |
-| `/reset` | 화면 비우기 |
+| `/clear` | 화면 + 스크롤백 비우기 |
 | `/name <새이름>` | 이름 변경 (다음 메시지부터 상대에게 반영) |
 | `/bell` | 상대 메시지 알림음 토글 |
 

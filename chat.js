@@ -346,15 +346,16 @@ const main = async () => {
         `${C.gray}명령어:`,
         "  /help             도움말",
         "  /quit             종료",
-        "  /reset            화면 비우기",
+        "  /clear            화면 + 스크롤백 비우기",
         "  /name <새이름>    내 이름 변경",
         `  /bell             상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})${C.reset}`,
       ];
       printAbovePrompt(lines.join("\n"));
     },
     quit: () => rl.close(),
-    reset: () => {
-      console.clear();
+    clear: () => {
+      process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+      rl.prevRows = 0;
       rl.prompt();
     },
     name: (rest) => {
