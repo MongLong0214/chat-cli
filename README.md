@@ -6,8 +6,8 @@
 - **세이프티 코드**: 공유키 fingerprint를 양측에 표시 → 별도 채널로 대조해 MITM 감지
 - **고정 방 또는 1회성 초대링크** 자유 선택
 - **이름 / 컬러 / 시간표시 / URL 하이라이트** 내장
-- **크로스 플랫폼**: Mac / Windows / Linux (Node 20+)
-- **외부 의존 `ws` 하나**. 서버 120줄, 클라이언트 460줄
+- **크로스 플랫폼**: Mac / Windows / Linux (Node 22+)
+- **클라이언트 제로 의존성**: Node 22 내장 WebSocket 사용 → `npm install` 불필요
 - **무(거의)료 호스팅**: Render Free Tier
 
 ## 구성

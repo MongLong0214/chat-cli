@@ -1,4 +1,3 @@
-import WebSocket from "ws";
 import readline from "readline";
 import crypto from "crypto";
 import { homedir } from "os";
@@ -10,12 +9,18 @@ import {
   writeFileSync,
 } from "fs";
 
+if (typeof WebSocket === "undefined") {
+  console.error(
+    `Node.js 22 이상이 필요합니다 (현재: ${process.versions.node}).\n` +
+      `최신 LTS: https://nodejs.org`
+  );
+  process.exit(1);
+}
+
 const SERVER = process.env.CHAT_SERVER || "wss://chat-cli-7woy.onrender.com";
 const MAX_LINE = 4096;
-const MAX_PAYLOAD = 64 * 1024;
 const MAX_NAME = 20;
 const KEEPALIVE_MS = 10 * 60 * 1000;
-const WS_PING_MS = 30 * 1000;
 
 const USE_COLOR = !process.env.NO_COLOR && process.stdout.isTTY;
 const C = USE_COLOR
@@ -179,7 +184,8 @@ const main = async () => {
     `${host}/?token=${encodeURIComponent(token)}` +
     `&pk=${myPk}` +
     `&name=${encodeURIComponent(myName)}`;
-  const ws = new WebSocket(wsUrl, { maxPayload: MAX_PAYLOAD });
+  const ws = new WebSocket(wsUrl);
+  ws.binaryType = "arraybuffer";
 
   let sharedKey = null;
   let peerName = "상대";
@@ -317,10 +323,16 @@ const main = async () => {
     if (bellEnabled) process.stdout.write("\x07");
   };
 
-  ws.on("message", (data) => {
+  const decodeFrame = (raw) => {
+    if (typeof raw === "string") return raw;
+    if (raw instanceof ArrayBuffer) return new TextDecoder().decode(raw);
+    return String(raw);
+  };
+
+  ws.addEventListener("message", (event) => {
     let msg;
     try {
-      msg = JSON.parse(data);
+      msg = JSON.parse(decodeFrame(event.data));
     } catch {
       above.warn("[경고] 서버에서 잘못된 메시지 수신 (무시)");
       return;
@@ -338,8 +350,8 @@ const main = async () => {
     }
   });
 
-  ws.on("close", (_code, reasonBuf) => {
-    const reason = reasonBuf?.toString() || "";
+  ws.addEventListener("close", (event) => {
+    const reason = event?.reason || "";
     if (reason === "room full") {
       console.log(
         `${C.warn}방이 가득 찼습니다 (이미 2명). 새 링크 필요.${C.reset}`
@@ -356,8 +368,9 @@ const main = async () => {
     process.exit(0);
   });
 
-  ws.on("error", (e) => {
-    console.error(`${C.err}에러: ${e.message}${C.reset}`);
+  ws.addEventListener("error", (event) => {
+    const msg = event?.message || event?.error?.message || "연결 실패";
+    console.error(`${C.err}에러: ${msg}${C.reset}`);
     process.exit(1);
   });
 
@@ -365,17 +378,7 @@ const main = async () => {
   const keepalive = setInterval(() => {
     fetch(httpUrl).catch(() => {});
   }, KEEPALIVE_MS);
-  const wsPing = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.ping();
-      } catch {}
-    }
-  }, WS_PING_MS);
-  ws.on("close", () => {
-    clearInterval(keepalive);
-    clearInterval(wsPing);
-  });
+  ws.addEventListener("close", () => clearInterval(keepalive));
 
   const sendEncrypted = (payload) => {
     const iv = crypto.randomBytes(12);
@@ -503,7 +506,7 @@ const main = async () => {
     }
   };
 
-  ws.on("close", () => {
+  ws.addEventListener("close", () => {
     if (rainbowInterval) clearInterval(rainbowInterval);
   });
 

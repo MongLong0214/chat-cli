@@ -63,7 +63,7 @@ wss.on("connection", (ws, req) => {
     const others = (rooms.get(token) || []).filter((p) => p.ws !== ws);
     for (const p of others) {
       try {
-        p.ws.send(data);
+        p.ws.send(data, { binary: false });
       } catch (err) {
         log("relay send failed", err.message);
       }
