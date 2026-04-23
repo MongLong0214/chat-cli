@@ -71,7 +71,9 @@ const applyColor = (key, text, offset = 0) => {
 const CONFIG_DIR = join(homedir(), ".chat-cli");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 const LEGACY_NAME_FILE = join(CONFIG_DIR, "name");
-const DEFAULT_CONFIG = { name: null, myColor: "green", peerColor: "cyan" };
+const DEFAULT_CONFIG = { name: null, myColor: "green", peerColor: "yellow" };
+
+const isValidColor = (key) => COLOR_CHOICES.some((c) => c.key === key);
 
 const cellWidth = (s) => {
   let w = 0;
@@ -88,17 +90,24 @@ const now = () => {
 };
 
 const loadConfig = () => {
+  const sanitize = (cfg) => {
+    const out = { ...DEFAULT_CONFIG, ...cfg };
+    if (typeof out.name !== "string" || !out.name.trim()) out.name = null;
+    else out.name = out.name.trim().slice(0, MAX_NAME);
+    if (!isValidColor(out.myColor)) out.myColor = DEFAULT_CONFIG.myColor;
+    if (!isValidColor(out.peerColor)) out.peerColor = DEFAULT_CONFIG.peerColor;
+    return out;
+  };
   try {
     if (existsSync(CONFIG_FILE)) {
-      const parsed = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-      return { ...DEFAULT_CONFIG, ...parsed };
+      return sanitize(JSON.parse(readFileSync(CONFIG_FILE, "utf8")));
     }
     if (existsSync(LEGACY_NAME_FILE)) {
       const name = readFileSync(LEGACY_NAME_FILE, "utf8").trim();
-      return { ...DEFAULT_CONFIG, name: name || null };
+      return sanitize({ name: name || null });
     }
   } catch {}
-  return { ...DEFAULT_CONFIG };
+  return sanitize({});
 };
 
 const saveConfig = (config) => {
@@ -262,12 +271,13 @@ const main = async () => {
       .update(sharedKey)
       .digest("base64url")
       .slice(0, 8);
-    console.log(`${C.warn}✓ 연결됨: ${peerName}${C.reset}`);
-    console.log(
-      `${C.gray}세이프티 코드: ${fp}  (상대와 별도 채널로 대조)${C.reset}`
-    );
-    console.log(`${C.gray}명령어: /help${C.reset}\n`);
-    rl.prompt();
+    const info = [
+      `${C.warn}✓ 연결됨: ${peerName}${C.reset}`,
+      `${C.gray}세이프티 코드: ${fp}  (상대와 별도 채널로 대조)${C.reset}`,
+      `${C.gray}명령어: /help${C.reset}`,
+    ].join("\n");
+    printAbovePrompt(info);
+    syncRainbowAnimation();
   };
 
   const handleMsg = (msg) => {
@@ -318,7 +328,7 @@ const main = async () => {
     try {
       if (msg.type === "peer") handlePeer(msg);
       else if (msg.type === "bye") {
-        console.log(`\n${C.warn}${peerName}가 나갔습니다.${C.reset}`);
+        above.warn(`${peerName}가 나갔습니다.`);
         try {
           ws.close(1000);
         } catch {}
@@ -392,7 +402,7 @@ const main = async () => {
         "  /quit                     종료",
         "  /clear                    화면 + 스크롤백 비우기",
         "  /name <새이름>            내 이름 변경",
-        "  /color <me|peer> <색>     내/상대 메시지 색 변경",
+        "  /color <me|peer>          내/상대 메시지 색 변경 (번호 선택)",
         `  /bell                     상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})${C.reset}`,
       ];
       printAbovePrompt(lines.join("\n"));
@@ -478,7 +488,11 @@ const main = async () => {
     if (needed && !rainbowInterval) {
       rainbowInterval = setInterval(() => {
         rainbowOffset = (rainbowOffset + 1) % 10000;
-        if (config.myColor === "rainbow" && rl.line.length === 0) {
+        if (
+          sharedKey &&
+          config.myColor === "rainbow" &&
+          rl.line.length === 0
+        ) {
           rl.setPrompt(makePrompt());
           rl.prompt(true);
         }
@@ -488,44 +502,39 @@ const main = async () => {
       rainbowInterval = null;
     }
   };
-  syncRainbowAnimation();
 
   ws.on("close", () => {
     if (rainbowInterval) clearInterval(rainbowInterval);
   });
 
   rl.on("line", (line) => {
-    if (pendingColorTarget) {
-      handleColorSelection(line);
-      rl.prompt();
-      return;
-    }
-    if (line.startsWith("/")) {
-      const [cmd, ...rest] = line.slice(1).split(" ");
-      const fn = Object.hasOwn(commands, cmd) ? commands[cmd] : null;
-      if (fn) {
-        try {
-          fn(rest.join(" "));
-        } catch (err) {
-          above.err(`[명령 오류] ${err.message}`);
-        }
-      } else {
-        above.warn(`알 수 없는 명령: /${cmd}. /help`);
-      }
-      return;
-    }
-    if (!sharedKey) return rl.prompt();
-    if (!line.trim()) return rl.prompt();
-    const truncated = line.length > MAX_LINE;
-    const text = truncated ? line.slice(0, MAX_LINE) : line;
-    replaceTypedLine(line, formatMsg(myName, text, config.myColor, rainbowOffset));
     try {
+      if (pendingColorTarget) {
+        handleColorSelection(line);
+        return;
+      }
+      if (line.startsWith("/")) {
+        const [cmd, ...rest] = line.slice(1).split(" ");
+        const fn = Object.hasOwn(commands, cmd) ? commands[cmd] : null;
+        if (fn) fn(rest.join(" "));
+        else above.warn(`알 수 없는 명령: /${cmd}. /help`);
+        return;
+      }
+      if (!sharedKey) return rl.prompt();
+      if (!line.trim()) return rl.prompt();
+      const truncated = line.length > MAX_LINE;
+      const text = truncated ? line.slice(0, MAX_LINE) : line;
+      replaceTypedLine(
+        line,
+        formatMsg(myName, text, config.myColor, rainbowOffset)
+      );
       sendEncrypted({ n: myName, t: text });
+      if (truncated) above.warn(`${MAX_LINE}자로 잘림`);
+      rl.prompt();
     } catch (err) {
-      above.err(`[오류] 전송 실패: ${err.message}`);
+      above.err(`[내부 오류] ${err.message}`);
+      rl.prompt();
     }
-    if (truncated) above.warn(`${MAX_LINE}자로 잘림`);
-    rl.prompt();
   });
 
   rl.on("close", () => {
