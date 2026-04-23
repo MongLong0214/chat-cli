@@ -21,25 +21,57 @@ const USE_COLOR = !process.env.NO_COLOR && process.stdout.isTTY;
 const C = USE_COLOR
   ? {
       reset: "\x1b[0m",
-      me: "\x1b[32m",
-      peer: "\x1b[36m",
       warn: "\x1b[33m",
       err: "\x1b[31m",
       gray: "\x1b[90m",
       link: "\x1b[4;94m",
     }
-  : {
-      reset: "",
-      me: "",
-      peer: "",
-      warn: "",
-      err: "",
-      gray: "",
-      link: "",
-    };
+  : { reset: "", warn: "", err: "", gray: "", link: "" };
+
+const COLOR_CHOICES = [
+  { key: "red", ko: "빨강", code: "\x1b[31m" },
+  { key: "orange", ko: "주황", code: "\x1b[38;5;208m" },
+  { key: "yellow", ko: "노랑", code: "\x1b[33m" },
+  { key: "green", ko: "초록", code: "\x1b[32m" },
+  { key: "blue", ko: "파랑", code: "\x1b[34m" },
+  { key: "navy", ko: "남색", code: "\x1b[38;5;27m" },
+  { key: "purple", ko: "보라", code: "\x1b[38;5;135m" },
+  { key: "white", ko: "흰색", code: "\x1b[97m" },
+  { key: "rainbow", ko: "레인보우", code: null },
+];
+
+const RAINBOW_HUES = [
+  "\x1b[31m",
+  "\x1b[38;5;208m",
+  "\x1b[33m",
+  "\x1b[32m",
+  "\x1b[36m",
+  "\x1b[34m",
+  "\x1b[35m",
+];
+
+const rainbow = (text, offset) => {
+  const chars = [...text];
+  let out = "";
+  for (let i = 0; i < chars.length; i++) {
+    const idx = ((i + offset) % RAINBOW_HUES.length + RAINBOW_HUES.length) % RAINBOW_HUES.length;
+    out += RAINBOW_HUES[idx] + chars[i];
+  }
+  return out + "\x1b[0m";
+};
+
+const applyColor = (key, text, offset = 0) => {
+  if (!USE_COLOR) return text;
+  if (key === "rainbow") return rainbow(text, offset);
+  const c = COLOR_CHOICES.find((x) => x.key === key);
+  if (!c || !c.code) return text;
+  return `${c.code}${text}\x1b[0m`;
+};
 
 const CONFIG_DIR = join(homedir(), ".chat-cli");
-const NAME_FILE = join(CONFIG_DIR, "name");
+const CONFIG_FILE = join(CONFIG_DIR, "config.json");
+const LEGACY_NAME_FILE = join(CONFIG_DIR, "name");
+const DEFAULT_CONFIG = { name: null, myColor: "green", peerColor: "cyan" };
 
 const cellWidth = (s) => {
   let w = 0;
@@ -55,18 +87,23 @@ const now = () => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-const saveName = (name) => {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(NAME_FILE, name);
-};
-
-const loadName = () => {
+const loadConfig = () => {
   try {
-    if (existsSync(NAME_FILE)) {
-      return readFileSync(NAME_FILE, "utf8").trim() || null;
+    if (existsSync(CONFIG_FILE)) {
+      const parsed = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+      return { ...DEFAULT_CONFIG, ...parsed };
+    }
+    if (existsSync(LEGACY_NAME_FILE)) {
+      const name = readFileSync(LEGACY_NAME_FILE, "utf8").trim();
+      return { ...DEFAULT_CONFIG, name: name || null };
     }
   } catch {}
-  return null;
+  return { ...DEFAULT_CONFIG };
+};
+
+const saveConfig = (config) => {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 };
 
 const askName = () =>
@@ -78,7 +115,6 @@ const askName = () =>
     tmp.question("내 이름을 입력하세요: ", (input) => {
       tmp.close();
       const clean = (input || "").trim().slice(0, MAX_NAME) || "나";
-      saveName(clean);
       resolve(clean);
     });
   });
@@ -117,8 +153,14 @@ if (!arg && !envRoom) {
 host = host.replace(/\/+$/, "");
 
 const main = async () => {
-  let myName = loadName();
-  if (!myName) myName = await askName();
+  const config = loadConfig();
+  if (!config.name) {
+    config.name = await askName();
+    saveConfig(config);
+  }
+  let myName = config.name;
+  let rainbowOffset = 0;
+  let pendingColorTarget = null;
 
   const { privateKey, publicKey } = crypto.generateKeyPairSync("x25519");
   const myPkDer = publicKey.export({ type: "spki", format: "der" });
@@ -143,7 +185,8 @@ const main = async () => {
     console.log("연결 중...");
   }
 
-  const makePrompt = () => `${C.me}[${myName}]${C.reset} > `;
+  const makePrompt = () =>
+    `${applyColor(config.myColor, `[${myName}]`, rainbowOffset)} > `;
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -165,13 +208,14 @@ const main = async () => {
     info: (msg) => printAbovePrompt(`${C.gray}${msg}${C.reset}`),
   };
 
-  const formatMsg = (name, text, color) => {
+  const formatMsg = (name, text, colorKey, offset = 0) => {
     const width = process.stdout.columns || 80;
     const time = now();
     const prefix = `[${name}] `;
     const plainLen = cellWidth(prefix) + cellWidth(text);
     const timeLen = time.length;
-    const colored = `${color}${prefix}${C.reset}${highlightUrls(text)}`;
+    const coloredPrefix = applyColor(colorKey, prefix, offset);
+    const colored = `${coloredPrefix}${highlightUrls(text)}`;
     if (plainLen + timeLen + 1 <= width) {
       const pad = width - plainLen - timeLen;
       return `${colored}${" ".repeat(pad)}${C.gray}${time}${C.reset}`;
@@ -259,7 +303,7 @@ const main = async () => {
     }
     const text = typeof parsed.t === "string" ? parsed.t : "";
     if (!text) return;
-    printAbovePrompt(formatMsg(peerName, text, C.peer));
+    printAbovePrompt(formatMsg(peerName, text, config.peerColor, rainbowOffset));
     if (bellEnabled) process.stdout.write("\x07");
   };
 
@@ -344,11 +388,12 @@ const main = async () => {
     help: () => {
       const lines = [
         `${C.gray}명령어:`,
-        "  /help             도움말",
-        "  /quit             종료",
-        "  /clear            화면 + 스크롤백 비우기",
-        "  /name <새이름>    내 이름 변경",
-        `  /bell             상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})${C.reset}`,
+        "  /help                     도움말",
+        "  /quit                     종료",
+        "  /clear                    화면 + 스크롤백 비우기",
+        "  /name <새이름>            내 이름 변경",
+        "  /color <me|peer> <색>     내/상대 메시지 색 변경",
+        `  /bell                     상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})${C.reset}`,
       ];
       printAbovePrompt(lines.join("\n"));
     },
@@ -362,11 +407,36 @@ const main = async () => {
       const newName = rest.trim().slice(0, MAX_NAME);
       if (!newName) return above.warn("사용법: /name <새이름>");
       myName = newName;
-      saveName(newName);
+      config.name = newName;
+      saveConfig(config);
       rl.setPrompt(makePrompt());
       above.warn(
         `이름을 '${newName}'(으)로 변경 (다음 메시지부터 상대에게 반영)`
       );
+    },
+    color: (rest) => {
+      const target = rest.trim();
+      if (target !== "me" && target !== "peer") {
+        return above.warn(
+          "사용법: /color me  (내 색)  또는  /color peer  (상대 색)"
+        );
+      }
+      pendingColorTarget = target;
+      const label = target === "me" ? "내" : "상대";
+      const currentKey = target === "me" ? config.myColor : config.peerColor;
+      const lines = [`${C.gray}${label} 메시지 색 선택 (현재: ${currentKey}):${C.reset}`];
+      COLOR_CHOICES.forEach((c, i) => {
+        const preview =
+          c.key === "rainbow"
+            ? rainbow(c.ko, rainbowOffset)
+            : `${c.code}${c.ko}${C.reset}`;
+        const mark = c.key === currentKey ? " ←" : "";
+        lines.push(`  ${i + 1}. ${preview}${mark}`);
+      });
+      lines.push(
+        `${C.gray}번호 (1-${COLOR_CHOICES.length}) 또는 0=취소:${C.reset}`
+      );
+      printAbovePrompt(lines.join("\n"));
     },
     bell: () => {
       bellEnabled = !bellEnabled;
@@ -374,7 +444,62 @@ const main = async () => {
     },
   };
 
+  const handleColorSelection = (line) => {
+    const target = pendingColorTarget;
+    const label = target === "me" ? "내" : "상대";
+    const trimmed = line.trim();
+    if (trimmed === "0" || trimmed === "") {
+      pendingColorTarget = null;
+      above.warn("색 선택 취소");
+      return;
+    }
+    const n = parseInt(trimmed, 10);
+    if (!Number.isInteger(n) || n < 1 || n > COLOR_CHOICES.length) {
+      above.warn(
+        `1-${COLOR_CHOICES.length} 번호만 입력 (0=취소). 다시 입력하세요`
+      );
+      return;
+    }
+    const choice = COLOR_CHOICES[n - 1];
+    pendingColorTarget = null;
+    if (target === "me") config.myColor = choice.key;
+    else config.peerColor = choice.key;
+    saveConfig(config);
+    rl.setPrompt(makePrompt());
+    syncRainbowAnimation();
+    above.warn(`${label} 색을 ${choice.ko}(으)로 변경`);
+  };
+
+  let rainbowInterval = null;
+  const syncRainbowAnimation = () => {
+    const needed =
+      USE_COLOR &&
+      (config.myColor === "rainbow" || config.peerColor === "rainbow");
+    if (needed && !rainbowInterval) {
+      rainbowInterval = setInterval(() => {
+        rainbowOffset = (rainbowOffset + 1) % 10000;
+        if (config.myColor === "rainbow" && rl.line.length === 0) {
+          rl.setPrompt(makePrompt());
+          rl.prompt(true);
+        }
+      }, 200);
+    } else if (!needed && rainbowInterval) {
+      clearInterval(rainbowInterval);
+      rainbowInterval = null;
+    }
+  };
+  syncRainbowAnimation();
+
+  ws.on("close", () => {
+    if (rainbowInterval) clearInterval(rainbowInterval);
+  });
+
   rl.on("line", (line) => {
+    if (pendingColorTarget) {
+      handleColorSelection(line);
+      rl.prompt();
+      return;
+    }
     if (line.startsWith("/")) {
       const [cmd, ...rest] = line.slice(1).split(" ");
       const fn = Object.hasOwn(commands, cmd) ? commands[cmd] : null;
@@ -393,7 +518,7 @@ const main = async () => {
     if (!line.trim()) return rl.prompt();
     const truncated = line.length > MAX_LINE;
     const text = truncated ? line.slice(0, MAX_LINE) : line;
-    replaceTypedLine(line, formatMsg(myName, text, C.me));
+    replaceTypedLine(line, formatMsg(myName, text, config.myColor, rainbowOffset));
     try {
       sendEncrypted({ n: myName, t: text });
     } catch (err) {
