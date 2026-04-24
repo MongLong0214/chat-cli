@@ -88,6 +88,7 @@ node chat.js "wss://chat-cli-7woy.onrender.com#abc..."
 | `/name <새이름>` | 이름 변경 (다음 메시지부터 상대에게 반영) |
 | `/color me` / `/color peer` | 내 / 상대 메시지 색 선택 (빨·주·노·초·파·남·보·흰·레인보우) |
 | `/bell` | 상대 메시지 알림음 토글 |
+| `/update` | GitHub에서 최신 chat.js 받아 자동 교체 (시작 시 새 버전 있으면 배너로 알림) |
 
 - URL은 받은 메시지에서 자동 하이라이트 (밑줄 + 파랑)
 - 메시지 전송 시간 우측 정렬 표시

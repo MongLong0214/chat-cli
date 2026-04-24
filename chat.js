@@ -7,6 +7,9 @@ import {
   existsSync,
   readFileSync,
   writeFileSync,
+  renameSync,
+  realpathSync,
+  unlinkSync,
 } from "fs";
 
 if (typeof WebSocket === "undefined") {
@@ -16,6 +19,12 @@ if (typeof WebSocket === "undefined") {
   );
   process.exit(1);
 }
+
+const VERSION = "1.1.0";
+const REPO = "MongLong0214/chat-cli";
+const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
+const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
+const UPDATE_FETCH_TIMEOUT_MS = 5000;
 
 const SERVER = process.env.CHAT_SERVER || "wss://chat-cli-7woy.onrender.com";
 const MAX_LINE = 4096;
@@ -137,6 +146,73 @@ const urlRe = /(https?:\/\/[^\s]+)/g;
 const highlightUrls = (text) =>
   text.replace(urlRe, `${C.link}$1${C.reset}`);
 
+const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const extractVersion = (source) =>
+  source.match(/const VERSION = "([^"]+)"/)?.[1] || null;
+
+const isNewerVersion = (remote, current) => {
+  const r = remote.split(".").map((n) => parseInt(n, 10) || 0);
+  const c = current.split(".").map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(r.length, c.length);
+  for (let i = 0; i < len; i++) {
+    const rv = r[i] || 0;
+    const cv = c[i] || 0;
+    if (rv > cv) return true;
+    if (rv < cv) return false;
+  }
+  return false;
+};
+
+const parseChangelogSection = (markdown, version) => {
+  const escaped = version.replace(/\./g, "\\.");
+  const re = new RegExp(`##\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`);
+  return markdown.match(re)?.[1]?.trim() || null;
+};
+
+const checkForUpdate = async () => {
+  const [chatRaw, changelogRaw] = await Promise.allSettled([
+    fetchWithTimeout(UPDATE_URL_CHAT),
+    fetchWithTimeout(UPDATE_URL_CHANGELOG),
+  ]);
+  if (chatRaw.status !== "fulfilled") return null;
+  const remoteVersion = extractVersion(chatRaw.value);
+  if (!remoteVersion || !isNewerVersion(remoteVersion, VERSION)) return null;
+  const changelog =
+    changelogRaw.status === "fulfilled"
+      ? parseChangelogSection(changelogRaw.value, remoteVersion)
+      : null;
+  return { remoteVersion, changelog };
+};
+
+const performUpdate = async () => {
+  const source = await fetchWithTimeout(UPDATE_URL_CHAT);
+  const remoteVersion = extractVersion(source);
+  if (!remoteVersion) throw new Error("원격에서 버전 추출 실패");
+  const scriptPath = realpathSync(process.argv[1]);
+  const tmpPath = `${scriptPath}.new`;
+  try {
+    writeFileSync(tmpPath, source);
+    renameSync(tmpPath, scriptPath);
+  } catch (err) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {}
+    throw err;
+  }
+  return { remoteVersion, same: remoteVersion === VERSION };
+};
+
 const arg = process.argv[2];
 const envRoom = process.env.CHAT_ROOM;
 let token, host, wasGenerated;
@@ -222,6 +298,24 @@ const main = async () => {
     err: (msg) => printAbovePrompt(`${C.err}${msg}${C.reset}`),
     info: (msg) => printAbovePrompt(`${C.gray}${msg}${C.reset}`),
   };
+
+  checkForUpdate()
+    .then((update) => {
+      if (!update) return;
+      const lines = [
+        `${C.warn}🔔 새 버전 v${update.remoteVersion} 사용 가능 (현재 v${VERSION})${C.reset}`,
+      ];
+      if (update.changelog) {
+        lines.push(`${C.gray}업데이트 내역:`);
+        for (const line of update.changelog.split("\n")) {
+          lines.push(`  ${line}`);
+        }
+        lines.push(C.reset);
+      }
+      lines.push(`${C.gray}업데이트: /update${C.reset}`);
+      printAbovePrompt(lines.join("\n"));
+    })
+    .catch(() => {});
 
   const formatMsg = (name, text, colorKey, offset = 0) => {
     const width = process.stdout.columns || 80;
@@ -400,13 +494,14 @@ const main = async () => {
   const commands = {
     help: () => {
       const lines = [
-        `${C.gray}명령어:`,
+        `${C.gray}명령어 (v${VERSION}):`,
         "  /help                     도움말",
         "  /quit                     종료",
         "  /clear                    화면 + 스크롤백 비우기",
         "  /name <새이름>            내 이름 변경",
         "  /color <me|peer>          내/상대 메시지 색 변경 (번호 선택)",
-        `  /bell                     상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})${C.reset}`,
+        `  /bell                     상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})`,
+        `  /update                   최신 버전으로 자동 업데이트${C.reset}`,
       ];
       printAbovePrompt(lines.join("\n"));
     },
@@ -454,6 +549,22 @@ const main = async () => {
     bell: () => {
       bellEnabled = !bellEnabled;
       above.warn(`알림음 ${bellEnabled ? "켜짐" : "꺼짐"}`);
+    },
+    update: async () => {
+      above.info("업데이트 확인 중...");
+      try {
+        const result = await performUpdate();
+        if (result.same) {
+          above.warn(`이미 최신 버전입니다 (v${VERSION})`);
+        } else {
+          above.warn(
+            `v${VERSION} → v${result.remoteVersion} 업데이트 완료.\n` +
+              `/quit 후 다시 실행하면 새 버전이 적용됩니다.`
+          );
+        }
+      } catch (err) {
+        above.err(`업데이트 실패: ${err.message}`);
+      }
     },
   };
 
