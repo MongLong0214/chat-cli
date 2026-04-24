@@ -107,7 +107,7 @@ const loadConfig = () => {
   const sanitize = (cfg) => {
     const out = { ...DEFAULT_CONFIG, ...cfg };
     if (typeof out.name !== "string" || !out.name.trim()) out.name = null;
-    else out.name = out.name.trim().slice(0, MAX_NAME);
+    else out.name = sanitizeDisplay(out.name).trim().slice(0, MAX_NAME) || null;
     if (!isValidColor(out.myColor)) out.myColor = DEFAULT_CONFIG.myColor;
     if (!isValidColor(out.peerColor)) out.peerColor = DEFAULT_CONFIG.peerColor;
     return out;
@@ -137,7 +137,8 @@ const askName = () =>
     });
     tmp.question("내 이름을 입력하세요: ", (input) => {
       tmp.close();
-      const clean = (input || "").trim().slice(0, MAX_NAME) || "나";
+      const clean =
+        sanitizeDisplay(input || "").trim().slice(0, MAX_NAME) || "나";
       resolve(clean);
     });
   });
@@ -145,6 +146,14 @@ const askName = () =>
 const urlRe = /(https?:\/\/[^\s]+)/g;
 const highlightUrls = (text) =>
   text.replace(urlRe, `${C.link}$1${C.reset}`);
+
+const sanitizeDisplay = (s) => {
+  if (typeof s !== "string") return "";
+  return s
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+};
 
 const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -199,6 +208,7 @@ const performUpdate = async () => {
   const source = await fetchWithTimeout(UPDATE_URL_CHAT);
   const remoteVersion = extractVersion(source);
   if (!remoteVersion) throw new Error("원격에서 버전 추출 실패");
+  if (remoteVersion === VERSION) return { remoteVersion, same: true };
   const scriptPath = realpathSync(process.argv[1]);
   const tmpPath = `${scriptPath}.new`;
   try {
@@ -210,7 +220,7 @@ const performUpdate = async () => {
     } catch {}
     throw err;
   }
-  return { remoteVersion, same: remoteVersion === VERSION };
+  return { remoteVersion, same: false };
 };
 
 const arg = process.argv[2];
@@ -306,11 +316,11 @@ const main = async () => {
         `${C.warn}🔔 새 버전 v${update.remoteVersion} 사용 가능 (현재 v${VERSION})${C.reset}`,
       ];
       if (update.changelog) {
-        lines.push(`${C.gray}업데이트 내역:`);
-        for (const line of update.changelog.split("\n")) {
-          lines.push(`  ${line}`);
-        }
-        lines.push(C.reset);
+        const body = update.changelog
+          .split("\n")
+          .map((l) => `  ${l}`)
+          .join("\n");
+        lines.push(`${C.gray}업데이트 내역:\n${body}${C.reset}`);
       }
       lines.push(`${C.gray}업데이트: /update${C.reset}`);
       printAbovePrompt(lines.join("\n"));
@@ -362,9 +372,12 @@ const main = async () => {
       throw new Error("공유 시크릿이 0 (무효 공개키)");
     }
     sharedKey = crypto.createHash("sha256").update(secret).digest();
-    if (typeof msg.name === "string" && msg.name.trim()) {
-      peerName = msg.name.trim().slice(0, 40);
-      peerNameConfirmed = true;
+    if (typeof msg.name === "string") {
+      const clean = sanitizeDisplay(msg.name).trim().slice(0, 40);
+      if (clean) {
+        peerName = clean;
+        peerNameConfirmed = true;
+      }
     }
     const fp = crypto
       .createHash("sha256")
@@ -399,19 +412,19 @@ const main = async () => {
     } catch {
       parsed = { t: pt };
     }
-    if (
-      typeof parsed.n === "string" &&
-      parsed.n.trim() &&
-      parsed.n !== peerName
-    ) {
-      const oldName = peerName;
-      peerName = parsed.n.slice(0, 40);
-      if (peerNameConfirmed) {
-        above.warn(`${oldName} → ${peerName} (으)로 이름 변경`);
+    if (typeof parsed.n === "string") {
+      const cleanN = sanitizeDisplay(parsed.n).trim().slice(0, 40);
+      if (cleanN && cleanN !== peerName) {
+        const oldName = peerName;
+        peerName = cleanN;
+        if (peerNameConfirmed) {
+          above.warn(`${oldName} → ${peerName} (으)로 이름 변경`);
+        }
+        peerNameConfirmed = true;
       }
-      peerNameConfirmed = true;
     }
-    const text = typeof parsed.t === "string" ? parsed.t : "";
+    const text =
+      typeof parsed.t === "string" ? sanitizeDisplay(parsed.t) : "";
     if (!text) return;
     printAbovePrompt(formatMsg(peerName, text, config.peerColor, rainbowOffset));
     if (bellEnabled) process.stdout.write("\x07");
@@ -512,7 +525,7 @@ const main = async () => {
       rl.prompt();
     },
     name: (rest) => {
-      const newName = rest.trim().slice(0, MAX_NAME);
+      const newName = sanitizeDisplay(rest).trim().slice(0, MAX_NAME);
       if (!newName) return above.warn("사용법: /name <새이름>");
       myName = newName;
       config.name = newName;
