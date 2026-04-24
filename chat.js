@@ -294,13 +294,32 @@ const main = async () => {
 
   const httpUrl = host.replace(/^ws(s?):/, "http$1:") + "/";
   const wakeStart = Date.now();
-  try {
-    await fetchWithTimeout(httpUrl, WAKEUP_TIMEOUT_MS);
+  const describeError = (err) => {
+    const cause = err?.cause?.code || err?.cause?.message;
+    return cause ? `${err.message} (${cause})` : err?.message || "timeout";
+  };
+  let wakeErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await fetchWithTimeout(httpUrl, WAKEUP_TIMEOUT_MS);
+      wakeErr = null;
+      break;
+    } catch (err) {
+      wakeErr = err;
+      if (attempt < 3) {
+        console.log(
+          `시도 ${attempt}/3 실패 (${describeError(err)}). 2초 후 재시도...`
+        );
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+  if (!wakeErr) {
     const elapsed = Math.round((Date.now() - wakeStart) / 1000);
     if (elapsed >= 3) console.log(`서버 응답 OK (${elapsed}s)`);
-  } catch (err) {
+  } else {
     console.log(
-      `서버 응답 없음 (${err?.message || "timeout"}). 그래도 연결 시도...`
+      `서버 응답 없음: ${describeError(wakeErr)}. 그래도 WS 연결 시도...`
     );
   }
 
