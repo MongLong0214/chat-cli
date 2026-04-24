@@ -30,6 +30,7 @@ const SERVER = process.env.CHAT_SERVER || "wss://chat-cli-7woy.onrender.com";
 const MAX_LINE = 4096;
 const MAX_NAME = 20;
 const KEEPALIVE_MS = 10 * 60 * 1000;
+const WAKEUP_TIMEOUT_MS = 90_000;
 
 const USE_COLOR = !process.env.NO_COLOR && process.stdout.isTTY;
 const C = USE_COLOR
@@ -266,6 +267,27 @@ const main = async () => {
   const myPkDer = publicKey.export({ type: "spki", format: "der" });
   const myPk = myPkDer.toString("base64url");
 
+  if (wasGenerated) {
+    console.log(
+      `\n초대링크 (상대에게 전달):\n${host}#${token}\n\n서버 깨우는 중... (첫 연결 시 30~60초 소요 가능)`
+    );
+  } else {
+    console.log(`서버 깨우는 중... (${host})`);
+    console.log("(첫 연결 시 30~60초 소요 가능)");
+  }
+
+  const httpUrl = host.replace(/^ws(s?):/, "http$1:") + "/";
+  const wakeStart = Date.now();
+  try {
+    await fetchWithTimeout(httpUrl, WAKEUP_TIMEOUT_MS);
+    const elapsed = Math.round((Date.now() - wakeStart) / 1000);
+    if (elapsed >= 3) console.log(`서버 응답 OK (${elapsed}s)`);
+  } catch (err) {
+    console.log(
+      `서버 응답 없음 (${err?.message || "timeout"}). 그래도 연결 시도...`
+    );
+  }
+
   const wsUrl =
     `${host}/?token=${encodeURIComponent(token)}` +
     `&pk=${myPk}` +
@@ -277,14 +299,6 @@ const main = async () => {
   let peerName = "상대";
   let peerNameConfirmed = false;
   let bellEnabled = false;
-
-  if (wasGenerated) {
-    console.log(
-      `\n초대링크 (상대에게 전달):\n${host}#${token}\n\n대기중...`
-    );
-  } else {
-    console.log("연결 중...");
-  }
 
   const makePrompt = () =>
     `${applyColor(config.myColor, `[${myName}]`, rainbowOffset)} > `;
@@ -457,6 +471,22 @@ const main = async () => {
     }
   });
 
+  ws.addEventListener("error", (event) => {
+    const err =
+      event?.error?.message ||
+      event?.message ||
+      event?.error?.code ||
+      "알 수 없는 오류";
+    console.error(`${C.err}연결 실패: ${err}${C.reset}`);
+    console.error(
+      `${C.gray}확인사항:` +
+        `\n  - 인터넷 연결` +
+        `\n  - Node 22 이상 (node -v)` +
+        `\n  - 방화벽/프록시가 wss:// 차단하는지${C.reset}`
+    );
+    process.exit(1);
+  });
+
   ws.addEventListener("close", (event) => {
     const reason = event?.reason || "";
     if (reason === "room full") {
@@ -475,13 +505,6 @@ const main = async () => {
     process.exit(0);
   });
 
-  ws.addEventListener("error", (event) => {
-    const msg = event?.message || event?.error?.message || "연결 실패";
-    console.error(`${C.err}에러: ${msg}${C.reset}`);
-    process.exit(1);
-  });
-
-  const httpUrl = host.replace(/^ws(s?):/, "http$1:") + "/";
   const keepalive = setInterval(() => {
     fetch(httpUrl).catch(() => {});
   }, KEEPALIVE_MS);
