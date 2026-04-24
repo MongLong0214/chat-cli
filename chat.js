@@ -524,16 +524,21 @@ const main = async () => {
 
   ws.addEventListener("close", (event) => {
     const reason = event?.reason || "";
-    if (reason === "room full") {
+    const code = event?.code;
+    if (reason === "room full" || (code === 1008 && !sharedKey)) {
       console.log(
-        `${C.warn}방이 가득 찼습니다 (이미 2명). 새 링크 필요.${C.reset}`
+        `${C.warn}방이 이미 2명으로 가득 찼습니다.${C.reset}\n` +
+          `${C.gray}  - 다른 방 이름으로 접속: node chat.js <다른이름>\n` +
+          `  - 또는 30초 정도 기다린 후 재시도 (끊긴 세션 정리)${C.reset}`
       );
     } else if (reason === "bad token" || reason === "bad pk") {
       console.log(`${C.err}연결 거부: ${reason}${C.reset}`);
-    } else if (reason === "server shutting down") {
+    } else if (reason === "server shutting down" || code === 1001) {
       console.log(`${C.warn}서버 재시작 중. 잠시 후 재시도.${C.reset}`);
     } else if (!sharedKey) {
-      console.log(`${C.gray}연결 종료 (핸드셰이크 전)${C.reset}`);
+      console.log(
+        `${C.gray}연결 종료 (핸드셰이크 전, code=${code || "?"})${C.reset}`
+      );
     } else {
       console.log(`${C.gray}연결 종료${C.reset}`);
     }
