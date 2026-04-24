@@ -131,12 +131,17 @@ const saveConfig = (config) => {
 };
 
 const askName = () =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
+    let answered = false;
     const tmp = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
+    tmp.on("close", () => {
+      if (!answered) reject(new Error("이름 입력 취소됨"));
+    });
     tmp.question("내 이름을 입력하세요: ", (input) => {
+      answered = true;
       tmp.close();
       const clean =
         sanitizeDisplay(input || "").trim().slice(0, MAX_NAME) || "나";
@@ -210,8 +215,19 @@ const performUpdate = async () => {
   const remoteVersion = extractVersion(source);
   if (!remoteVersion) throw new Error("원격에서 버전 추출 실패");
   if (remoteVersion === VERSION) return { remoteVersion, same: true };
+  if (
+    source.length < 1000 ||
+    !source.includes("import readline") ||
+    !source.includes("const VERSION")
+  ) {
+    throw new Error("다운로드된 파일이 유효하지 않음 (손상/빈 응답)");
+  }
   const scriptPath = realpathSync(process.argv[1]);
   const tmpPath = `${scriptPath}.new`;
+  const backupPath = `${scriptPath}.bak`;
+  try {
+    writeFileSync(backupPath, readFileSync(scriptPath));
+  } catch {}
   try {
     writeFileSync(tmpPath, source);
     renameSync(tmpPath, scriptPath);
@@ -221,7 +237,7 @@ const performUpdate = async () => {
     } catch {}
     throw err;
   }
-  return { remoteVersion, same: false };
+  return { remoteVersion, same: false, backupPath };
 };
 
 const arg = process.argv[2];
@@ -595,6 +611,7 @@ const main = async () => {
         } else {
           above.warn(
             `v${VERSION} → v${result.remoteVersion} 업데이트 완료.\n` +
+              `백업: ${result.backupPath}\n` +
               `/quit 후 다시 실행하면 새 버전이 적용됩니다.`
           );
         }
