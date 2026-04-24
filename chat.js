@@ -728,12 +728,15 @@ const main = async () => {
     }
   });
 
-  rl.on("close", () => {
+  const gracefulExit = () => {
     try {
       ws.close(1000);
     } catch {}
     process.exit(0);
-  });
+  };
+  rl.on("close", gracefulExit);
+  process.on("SIGHUP", gracefulExit);
+  process.on("SIGTERM", gracefulExit);
 };
 
 main().catch((err) => {

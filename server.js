@@ -4,7 +4,7 @@ import { parse } from "url";
 
 const port = process.env.PORT || 8080;
 const MAX_PAYLOAD = 64 * 1024;
-const HEARTBEAT_MS = 30_000;
+const HEARTBEAT_MS = 10_000;
 const rooms = new Map();
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
@@ -30,7 +30,26 @@ wss.on("connection", (ws, req) => {
   }
   const safeName = typeof name === "string" ? name.slice(0, 40) : "";
 
-  const peers = rooms.get(token) || [];
+  let peers = rooms.get(token) || [];
+
+  // 좀비 대체: 같은 name 또는 같은 pk로 재접속 시 이전 세션 강제 교체
+  const dupIdx = peers.findIndex(
+    (p) => (safeName && p.name === safeName) || p.pk === pk
+  );
+  if (dupIdx >= 0) {
+    const dup = peers[dupIdx];
+    dup.ws.replacedBySession = true;
+    log(
+      `replace zombie room=${token.slice(0, 4)}.. ` +
+        `name=${dup.name || "(없음)"}`
+    );
+    try {
+      dup.ws.terminate();
+    } catch {}
+    peers.splice(dupIdx, 1);
+    rooms.set(token, peers);
+  }
+
   if (peers.length >= 2) return ws.close(1008, "room full");
 
   ws.isAlive = true;
@@ -76,13 +95,18 @@ wss.on("connection", (ws, req) => {
       rooms.delete(token);
     } else {
       rooms.set(token, remaining);
-      for (const p of remaining) {
-        try {
-          p.ws.send(JSON.stringify({ type: "bye" }));
-        } catch {}
+      if (!ws.replacedBySession) {
+        for (const p of remaining) {
+          try {
+            p.ws.send(JSON.stringify({ type: "bye" }));
+          } catch {}
+        }
       }
     }
-    log(`leave room=${token.slice(0, 4)}.. remaining=${remaining.length}`);
+    log(
+      `leave room=${token.slice(0, 4)}.. remaining=${remaining.length}` +
+        (ws.replacedBySession ? " (replaced)" : "")
+    );
   });
 });
 
