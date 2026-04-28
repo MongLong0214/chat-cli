@@ -58,13 +58,13 @@ const COLOR_CHOICES = [
 ];
 
 const RAINBOW_HUES = [
-  "\x1b[31m",
-  "\x1b[38;5;208m",
-  "\x1b[33m",
-  "\x1b[32m",
-  "\x1b[36m",
-  "\x1b[34m",
-  "\x1b[35m",
+  "\x1b[38;5;217m",
+  "\x1b[38;5;223m",
+  "\x1b[38;5;229m",
+  "\x1b[38;5;157m",
+  "\x1b[38;5;159m",
+  "\x1b[38;5;153m",
+  "\x1b[38;5;183m",
 ];
 
 const rainbow = (text, offset) => {
@@ -345,16 +345,19 @@ const main = async () => {
     while (messageLog.length > MAX_LOG) messageLog.shift();
   };
   const redrawScreen = () => {
-    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
-    rl.prevRows = 0;
+    const lines = [];
     for (const m of messageLog) {
       if (m.deleted) continue;
       const colorKey =
         m.sender === "me" ? config.myColor : config.peerColor;
-      process.stdout.write(
-        formatMsg(m.name, m.text, colorKey, rainbowOffset, m.time) + "\n"
+      lines.push(
+        formatMsg(m.name, m.text, colorKey, rainbowOffset, m.time)
       );
     }
+    process.stdout.write(
+      "\x1b[2J\x1b[3J\x1b[H" + (lines.length ? lines.join("\n") + "\n" : "")
+    );
+    rl.prevRows = 0;
     rl.prompt();
   };
 
@@ -723,9 +726,9 @@ const main = async () => {
 
   const handleDelSelection = (line) => {
     const ids = pendingDelSelection;
-    pendingDelSelection = null;
     const trimmed = line.trim();
     if (trimmed === "" || trimmed === "0") {
+      pendingDelSelection = null;
       above.warn("삭제 취소");
       return;
     }
@@ -740,12 +743,14 @@ const main = async () => {
           (n) => !Number.isInteger(n) || n < 1 || n > ids.length
         )
       ) {
-        return above.warn(
-          `유효하지 않은 번호. /del 다시 시도 (1-${ids.length})`
+        above.warn(
+          `유효하지 않은 번호. 1-${ids.length} 또는 0=취소. 다시 입력`
         );
+        return;
       }
       toDelete = [...new Set(numbers)].map((n) => ids[n - 1]);
     }
+    pendingDelSelection = null;
     let count = 0;
     for (const id of toDelete) {
       const m = messageLog.find(
