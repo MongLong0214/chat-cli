@@ -74,9 +74,11 @@ const COLOR_CHOICES = [
   { key: "navy", ko: "남색", code: "\x1b[38;5;27m" },
   { key: "purple", ko: "보라", code: "\x1b[38;5;135m" },
   { key: "white", ko: "흰색", code: "\x1b[97m" },
-  { key: "rainbow", ko: "레인보우", code: null, hues: VIVID_HUES },
-  { key: "pastel", ko: "파스텔", code: null, hues: PASTEL_HUES },
+  { key: "rainbow", ko: "레인보우", hues: VIVID_HUES },
+  { key: "pastel", ko: "파스텔", hues: PASTEL_HUES },
 ];
+
+const getColor = (key) => COLOR_CHOICES.find((c) => c.key === key);
 
 const cycleHues = (text, offset, hues) => {
   const chars = [...text];
@@ -88,14 +90,11 @@ const cycleHues = (text, offset, hues) => {
   return out + "\x1b[0m";
 };
 
-const isAnimatedColor = (key) => {
-  const c = COLOR_CHOICES.find((x) => x.key === key);
-  return !!c?.hues;
-};
+const isAnimatedColor = (key) => !!getColor(key)?.hues;
 
 const applyColor = (key, text, offset = 0) => {
   if (!USE_COLOR) return text;
-  const c = COLOR_CHOICES.find((x) => x.key === key);
+  const c = getColor(key);
   if (!c) return text;
   if (c.hues) return cycleHues(text, offset, c.hues);
   if (!c.code) return text;
