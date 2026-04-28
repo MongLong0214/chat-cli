@@ -20,7 +20,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -45,6 +45,26 @@ const C = USE_COLOR
     }
   : { reset: "", warn: "", err: "", gray: "", link: "" };
 
+const VIVID_HUES = [
+  "\x1b[31m",
+  "\x1b[38;5;208m",
+  "\x1b[33m",
+  "\x1b[32m",
+  "\x1b[36m",
+  "\x1b[34m",
+  "\x1b[35m",
+];
+
+const PASTEL_HUES = [
+  "\x1b[38;5;211m",
+  "\x1b[38;5;215m",
+  "\x1b[38;5;228m",
+  "\x1b[38;5;120m",
+  "\x1b[38;5;87m",
+  "\x1b[38;5;117m",
+  "\x1b[38;5;177m",
+];
+
 const COLOR_CHOICES = [
   { key: "red", ko: "빨강", code: "\x1b[31m" },
   { key: "orange", ko: "주황", code: "\x1b[38;5;208m" },
@@ -54,34 +74,31 @@ const COLOR_CHOICES = [
   { key: "navy", ko: "남색", code: "\x1b[38;5;27m" },
   { key: "purple", ko: "보라", code: "\x1b[38;5;135m" },
   { key: "white", ko: "흰색", code: "\x1b[97m" },
-  { key: "rainbow", ko: "레인보우", code: null },
+  { key: "rainbow", ko: "레인보우", code: null, hues: VIVID_HUES },
+  { key: "pastel", ko: "파스텔", code: null, hues: PASTEL_HUES },
 ];
 
-const RAINBOW_HUES = [
-  "\x1b[38;5;217m",
-  "\x1b[38;5;223m",
-  "\x1b[38;5;229m",
-  "\x1b[38;5;157m",
-  "\x1b[38;5;159m",
-  "\x1b[38;5;153m",
-  "\x1b[38;5;183m",
-];
-
-const rainbow = (text, offset) => {
+const cycleHues = (text, offset, hues) => {
   const chars = [...text];
   let out = "";
   for (let i = 0; i < chars.length; i++) {
-    const idx = ((i + offset) % RAINBOW_HUES.length + RAINBOW_HUES.length) % RAINBOW_HUES.length;
-    out += RAINBOW_HUES[idx] + chars[i];
+    const idx = (((i + offset) % hues.length) + hues.length) % hues.length;
+    out += hues[idx] + chars[i];
   }
   return out + "\x1b[0m";
 };
 
+const isAnimatedColor = (key) => {
+  const c = COLOR_CHOICES.find((x) => x.key === key);
+  return !!c?.hues;
+};
+
 const applyColor = (key, text, offset = 0) => {
   if (!USE_COLOR) return text;
-  if (key === "rainbow") return rainbow(text, offset);
   const c = COLOR_CHOICES.find((x) => x.key === key);
-  if (!c || !c.code) return text;
+  if (!c) return text;
+  if (c.hues) return cycleHues(text, offset, c.hues);
+  if (!c.code) return text;
   return `${c.code}${text}\x1b[0m`;
 };
 
@@ -689,10 +706,9 @@ const main = async () => {
       const currentKey = target === "me" ? config.myColor : config.peerColor;
       const lines = [`${C.gray}${label} 메시지 색 선택 (현재: ${currentKey}):${C.reset}`];
       COLOR_CHOICES.forEach((c, i) => {
-        const preview =
-          c.key === "rainbow"
-            ? rainbow(c.ko, rainbowOffset)
-            : `${c.code}${c.ko}${C.reset}`;
+        const preview = c.hues
+          ? cycleHues(c.ko, rainbowOffset, c.hues)
+          : `${c.code}${c.ko}${C.reset}`;
         const mark = c.key === currentKey ? " ←" : "";
         lines.push(`  ${i + 1}. ${preview}${mark}`);
       });
@@ -801,13 +817,13 @@ const main = async () => {
   const syncRainbowAnimation = () => {
     const needed =
       USE_COLOR &&
-      (config.myColor === "rainbow" || config.peerColor === "rainbow");
+      (isAnimatedColor(config.myColor) || isAnimatedColor(config.peerColor));
     if (needed && !rainbowInterval) {
       rainbowInterval = setInterval(() => {
         rainbowOffset = (rainbowOffset + 1) % 10000;
         if (
           sharedKey &&
-          config.myColor === "rainbow" &&
+          isAnimatedColor(config.myColor) &&
           rl.line.length === 0
         ) {
           rl.setPrompt(makePrompt());
