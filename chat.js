@@ -20,7 +20,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -31,6 +31,8 @@ const MAX_LINE = 4096;
 const MAX_NAME = 20;
 const KEEPALIVE_MS = 10 * 60 * 1000;
 const WAKEUP_TIMEOUT_MS = 90_000;
+const MAX_LOG = 200;
+const DEL_LIST_SIZE = 10;
 
 const USE_COLOR = !process.env.NO_COLOR && process.stdout.isTTY;
 const C = USE_COLOR
@@ -334,6 +336,27 @@ const main = async () => {
   let peerName = "상대";
   let peerNameConfirmed = false;
   let bellEnabled = false;
+  let pendingDelSelection = null;
+  const messageLog = [];
+
+  const genMsgId = () => crypto.randomBytes(4).toString("hex");
+  const addMessage = (entry) => {
+    messageLog.push({ ...entry, deleted: false });
+    while (messageLog.length > MAX_LOG) messageLog.shift();
+  };
+  const redrawScreen = () => {
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+    rl.prevRows = 0;
+    for (const m of messageLog) {
+      if (m.deleted) continue;
+      const colorKey =
+        m.sender === "me" ? config.myColor : config.peerColor;
+      process.stdout.write(
+        formatMsg(m.name, m.text, colorKey, rainbowOffset, m.time) + "\n"
+      );
+    }
+    rl.prompt();
+  };
 
   const makePrompt = () =>
     `${applyColor(config.myColor, `[${myName}]`, rainbowOffset)} > `;
@@ -376,9 +399,9 @@ const main = async () => {
     })
     .catch(() => {});
 
-  const formatMsg = (name, text, colorKey, offset = 0) => {
+  const formatMsg = (name, text, colorKey, offset = 0, savedTime) => {
     const width = process.stdout.columns || 80;
-    const time = now();
+    const time = savedTime || now();
     const prefix = `[${name}] `;
     const plainLen = cellWidth(prefix) + cellWidth(text);
     const timeLen = time.length;
@@ -472,9 +495,36 @@ const main = async () => {
         peerNameConfirmed = true;
       }
     }
+    if (parsed.kind === "del" && Array.isArray(parsed.ids)) {
+      let count = 0;
+      for (const id of parsed.ids) {
+        if (typeof id !== "string") continue;
+        const m = messageLog.find(
+          (x) => x.id === id && x.sender === "peer" && !x.deleted
+        );
+        if (m) {
+          m.deleted = true;
+          count++;
+        }
+      }
+      if (count > 0) {
+        redrawScreen();
+        above.warn(`${peerName}이(가) 메시지 ${count}개 삭제`);
+      }
+      return;
+    }
     const text =
       typeof parsed.t === "string" ? sanitizeDisplay(parsed.t) : "";
     if (!text) return;
+    const msgId =
+      typeof parsed.id === "string" && parsed.id ? parsed.id : genMsgId();
+    addMessage({
+      id: msgId,
+      sender: "peer",
+      name: peerName,
+      text,
+      time: now(),
+    });
     printAbovePrompt(formatMsg(peerName, text, config.peerColor, rainbowOffset));
     if (bellEnabled) process.stdout.write("\x07");
   };
@@ -573,7 +623,8 @@ const main = async () => {
         `${C.gray}명령어 (v${VERSION}):`,
         "  /help                     도움말",
         "  /quit                     종료",
-        "  /clear                    화면 + 스크롤백 비우기",
+        "  /clear                    화면 + 스크롤백 비우기 (히스토리도 비움)",
+        "  /del                      내가 보낸 최근 메시지 선택 삭제",
         "  /name <새이름>            내 이름 변경",
         "  /color <me|peer>          내/상대 메시지 색 변경 (번호 선택)",
         `  /bell                     상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})`,
@@ -583,9 +634,34 @@ const main = async () => {
     },
     quit: () => rl.close(),
     clear: () => {
+      messageLog.length = 0;
       process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
       rl.prevRows = 0;
       rl.prompt();
+    },
+    del: () => {
+      if (!sharedKey) return above.warn("연결되지 않음");
+      const myMessages = messageLog
+        .filter((m) => m.sender === "me" && !m.deleted)
+        .slice(-DEL_LIST_SIZE);
+      if (myMessages.length === 0) {
+        return above.warn("삭제할 내 메시지가 없습니다");
+      }
+      pendingDelSelection = myMessages.map((m) => m.id);
+      const lines = [
+        `${C.gray}내가 보낸 최근 ${myMessages.length}개:${C.reset}`,
+      ];
+      myMessages.forEach((m, i) => {
+        const preview =
+          m.text.length > 50 ? m.text.slice(0, 50) + "..." : m.text;
+        lines.push(
+          `  ${i + 1}. ${preview}  ${C.gray}${m.time}${C.reset}`
+        );
+      });
+      lines.push(
+        `${C.gray}번호 입력 (예: "1 3 5" / "all" / 0=취소):${C.reset}`
+      );
+      printAbovePrompt(lines.join("\n"));
     },
     name: (rest) => {
       const newName = sanitizeDisplay(rest).trim().slice(0, MAX_NAME);
@@ -645,6 +721,51 @@ const main = async () => {
     },
   };
 
+  const handleDelSelection = (line) => {
+    const ids = pendingDelSelection;
+    pendingDelSelection = null;
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed === "0") {
+      above.warn("삭제 취소");
+      return;
+    }
+    let toDelete;
+    if (trimmed.toLowerCase() === "all") {
+      toDelete = [...ids];
+    } else {
+      const numbers = trimmed.split(/[\s,]+/).map((s) => parseInt(s, 10));
+      if (
+        numbers.length === 0 ||
+        numbers.some(
+          (n) => !Number.isInteger(n) || n < 1 || n > ids.length
+        )
+      ) {
+        return above.warn(
+          `유효하지 않은 번호. /del 다시 시도 (1-${ids.length})`
+        );
+      }
+      toDelete = [...new Set(numbers)].map((n) => ids[n - 1]);
+    }
+    let count = 0;
+    for (const id of toDelete) {
+      const m = messageLog.find(
+        (x) => x.id === id && x.sender === "me" && !x.deleted
+      );
+      if (m) {
+        m.deleted = true;
+        count++;
+      }
+    }
+    if (count === 0) return above.warn("삭제할 메시지 없음");
+    try {
+      sendEncrypted({ kind: "del", n: myName, ids: toDelete });
+    } catch (err) {
+      above.err(`상대에게 삭제 알림 실패: ${err.message}`);
+    }
+    redrawScreen();
+    above.warn(`✓ 메시지 ${count}개 삭제됨`);
+  };
+
   const handleColorSelection = (line) => {
     const target = pendingColorTarget;
     const label = target === "me" ? "내" : "상대";
@@ -700,6 +821,10 @@ const main = async () => {
 
   rl.on("line", (line) => {
     try {
+      if (pendingDelSelection) {
+        handleDelSelection(line);
+        return;
+      }
       if (pendingColorTarget) {
         handleColorSelection(line);
         return;
@@ -719,7 +844,15 @@ const main = async () => {
         line,
         formatMsg(myName, text, config.myColor, rainbowOffset)
       );
-      sendEncrypted({ n: myName, t: text });
+      const id = genMsgId();
+      addMessage({
+        id,
+        sender: "me",
+        name: myName,
+        text,
+        time: now(),
+      });
+      sendEncrypted({ kind: "msg", n: myName, t: text, id });
       if (truncated) above.warn(`${MAX_LINE}자로 잘림`);
       rl.prompt();
     } catch (err) {
