@@ -21,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.1";
+const VERSION = "1.3.2";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -210,24 +210,18 @@ const spawnOSNotification = (title, body) => {
         stdio: "ignore",
       }).unref();
     } else if (process.platform === "win32") {
-      const xmlEsc = (s) =>
-        s
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&apos;");
+      const psEsc = (s) => s.replace(/'/g, "''");
       const ps =
-        `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;` +
-        `[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;` +
-        `$xml = New-Object Windows.Data.Xml.Dom.XmlDocument;` +
-        `$xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>${xmlEsc(
-          t
-        )}</text><text>${xmlEsc(
-          b
-        )}</text></binding></visual></toast>');` +
-        `$toast = New-Object Windows.UI.Notifications.ToastNotification $xml;` +
-        `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('chat-cli').Show($toast);` +
+        `[reflection.assembly]::LoadWithPartialName('System.Windows.Forms') > $null;` +
+        `[reflection.assembly]::LoadWithPartialName('System.Drawing') > $null;` +
+        `$n = New-Object System.Windows.Forms.NotifyIcon;` +
+        `$n.Icon = [System.Drawing.SystemIcons]::Information;` +
+        `$n.BalloonTipTitle = '${psEsc(t)}';` +
+        `$n.BalloonTipText = '${psEsc(b)}';` +
+        `$n.Visible = $true;` +
+        `$n.ShowBalloonTip(5000);` +
+        `Start-Sleep -Seconds 6;` +
+        `$n.Dispose();` +
         `[System.Media.SystemSounds]::Asterisk.Play()`;
       spawn(
         "powershell",
@@ -818,12 +812,19 @@ const main = async () => {
     notify: () => {
       config.notify = !config.notify;
       saveConfig(config);
-      if (!config.notify) markRead();
+      if (!config.notify) {
+        markRead();
+        above.warn("데스크톱 알림 꺼짐");
+        return;
+      }
+      spawnOSNotification(
+        "chat-cli",
+        "알림 테스트 — 이 팝업이 보이면 정상 작동"
+      );
       above.warn(
-        `데스크톱 알림 ${config.notify ? "켜짐" : "꺼짐"}` +
-          (config.notify
-            ? " (다음 메시지부터 OS 알림 + 탭 제목 카운터)"
-            : "")
+        "데스크톱 알림 켜짐 — 테스트 알림 발송됨\n" +
+          "  팝업이 안 보이면 Windows 설정 → 알림 → 켜짐 확인,\n" +
+          "  '집중 지원 (Focus assist)'이 꺼져있는지 확인"
       );
     },
     update: async () => {

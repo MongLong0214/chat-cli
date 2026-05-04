@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+- Windows 알림 fix: WinRT Toast (AppId 등록 필요로 silent fail) → NotifyIcon BalloonTip 방식 교체
+  - Windows 10/11이 자동으로 toast로 렌더링, 등록 절차 불필요
+- `/notify` 토글 ON 시 즉시 테스트 알림 발송 (검증 용이)
+- 안 보이면 Windows 설정/Focus assist 안내
+
 ## 1.3.1
 - WS error 이벤트 진단 강화: `error.cause` 체인 walk (최대 5depth), node 버전·플랫폼·URL 표시
 - "알 수 없는 오류" fallback 시 디버그 정보 자동 노출
