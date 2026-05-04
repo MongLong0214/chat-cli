@@ -21,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.2";
+const VERSION = "1.3.3";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -210,22 +210,63 @@ const spawnOSNotification = (title, body) => {
         stdio: "ignore",
       }).unref();
     } else if (process.platform === "win32") {
+      const xmlEsc = (s) =>
+        s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&apos;");
       const psEsc = (s) => s.replace(/'/g, "''");
       const ps =
-        `[reflection.assembly]::LoadWithPartialName('System.Windows.Forms') > $null;` +
-        `[reflection.assembly]::LoadWithPartialName('System.Drawing') > $null;` +
-        `$n = New-Object System.Windows.Forms.NotifyIcon;` +
-        `$n.Icon = [System.Drawing.SystemIcons]::Information;` +
-        `$n.BalloonTipTitle = '${psEsc(t)}';` +
-        `$n.BalloonTipText = '${psEsc(b)}';` +
-        `$n.Visible = $true;` +
-        `$n.ShowBalloonTip(5000);` +
-        `Start-Sleep -Seconds 6;` +
-        `$n.Dispose();` +
+        `$ErrorActionPreference = 'SilentlyContinue';` +
+        `$AppId = 'chat-cli';` +
+        `$RegPath = 'HKCU:\\SOFTWARE\\Classes\\AppUserModelId\\' + $AppId;` +
+        `if (-not (Test-Path $RegPath)) {` +
+        `  New-Item -Path $RegPath -Force | Out-Null;` +
+        `  Set-ItemProperty -Path $RegPath -Name 'DisplayName' -Value 'chat-cli' -Force;` +
+        `};` +
+        `$toastShown = $false;` +
+        `try {` +
+        `  $ErrorActionPreference = 'Stop';` +
+        `  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;` +
+        `  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;` +
+        `  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument;` +
+        `  $xml.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text>${xmlEsc(
+          t
+        )}</text><text>${xmlEsc(
+          b
+        )}</text></binding></visual></toast>');` +
+        `  $toast = New-Object Windows.UI.Notifications.ToastNotification $xml;` +
+        `  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($AppId).Show($toast);` +
+        `  $toastShown = $true;` +
+        `} catch {};` +
+        `if (-not $toastShown) {` +
+        `  try {` +
+        `    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop;` +
+        `    Add-Type -AssemblyName System.Drawing -ErrorAction Stop;` +
+        `    $n = New-Object System.Windows.Forms.NotifyIcon;` +
+        `    $n.Icon = [System.Drawing.SystemIcons]::Information;` +
+        `    $n.BalloonTipTitle = '${psEsc(t)}';` +
+        `    $n.BalloonTipText = '${psEsc(b)}';` +
+        `    $n.Visible = $true;` +
+        `    $n.ShowBalloonTip(5000);` +
+        `    Start-Sleep -Seconds 6;` +
+        `    $n.Dispose();` +
+        `  } catch {};` +
+        `};` +
         `[System.Media.SystemSounds]::Asterisk.Play()`;
       spawn(
         "powershell",
-        ["-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-WindowStyle",
+          "Hidden",
+          "-Command",
+          ps,
+        ],
         { detached: true, stdio: "ignore" }
       ).unref();
     }

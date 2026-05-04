@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.3
+- Windows 알림 진짜 fix:
+  1. HKCU 레지스트리에 AppId('chat-cli') **자동 등록** (관리자 권한 불필요, 1회만)
+  2. 등록된 AppId로 WinRT Toast 표시
+  3. WinRT 실패 시 NotifyIcon BalloonTip fallback
+  4. 항상 시스템 소리 재생 (보장)
+- `-ExecutionPolicy Bypass` 추가 (그룹 정책 회피)
+- 이전 버전이 silent fail한 진짜 원인: AppId 등록 안 됨
+
 ## 1.3.2
 - Windows 알림 fix: WinRT Toast (AppId 등록 필요로 silent fail) → NotifyIcon BalloonTip 방식 교체
   - Windows 10/11이 자동으로 toast로 렌더링, 등록 절차 불필요
