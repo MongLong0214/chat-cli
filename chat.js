@@ -426,6 +426,9 @@ const main = async () => {
     setTerminalTitle(`💬 ${peerName} (${unreadCount})`);
     spawnOSNotification(peerName, text);
   };
+  const clearTitleOnExit = () => {
+    if (config.notify) setTerminalTitle("");
+  };
 
   const genMsgId = () => crypto.randomBytes(4).toString("hex");
   const addMessage = (entry) => {
@@ -665,7 +668,7 @@ const main = async () => {
   });
 
   ws.addEventListener("close", (event) => {
-    if (config.notify) setTerminalTitle("");
+    clearTitleOnExit();
     const reason = event?.reason || "";
     const code = event?.code;
     if (reason === "room full" || (code === 1008 && !sharedKey)) {
@@ -969,7 +972,7 @@ const main = async () => {
   });
 
   const gracefulExit = () => {
-    if (config.notify) setTerminalTitle("");
+    clearTitleOnExit();
     try {
       ws.close(1000);
     } catch {}
