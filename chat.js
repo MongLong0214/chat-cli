@@ -21,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.5";
+const VERSION = "1.3.6";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -507,11 +507,11 @@ const main = async () => {
     unreadCount = 0;
     setTerminalTitle("chat");
   };
-  const onPeerActivity = (text) => {
+  const onPeerActivity = () => {
     if (!config.notify) return;
     unreadCount++;
     setTerminalTitle(`💬 ${peerName} (${unreadCount})`);
-    spawnOSNotification(peerName, text);
+    spawnOSNotification(peerName, "새 메시지");
   };
   const clearTitleOnExit = () => {
     if (config.notify) setTerminalTitle("");
@@ -708,7 +708,7 @@ const main = async () => {
     });
     printAbovePrompt(formatMsg(peerName, text, config.peerColor, rainbowOffset));
     if (bellEnabled) process.stdout.write("\x07");
-    onPeerActivity(text);
+    onPeerActivity();
   };
 
   const decodeFrame = (raw) => {
