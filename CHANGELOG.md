@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.5
+- Windows 알림이 테스트는 되는데 실제 메시지에선 안 뜨던 문제 fix:
+  실제 알림 spawn이 `detached + stdio:ignore` → 테스트와 같은
+  `stdio:["ignore","pipe","pipe"] + windowsHide:true`로 통일.
+  Windows의 detached PowerShell이 WinRT UI subsystem 접근에 실패하던 케이스 우회.
+
 ## 1.3.4
 - `/notify` ON 시 PowerShell 진단 출력을 채팅창에 직접 표시
   (silent fail 종식, 정확한 실패 원인 노출)

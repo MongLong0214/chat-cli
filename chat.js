@@ -21,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.4";
+const VERSION = "1.3.5";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -276,10 +276,12 @@ const spawnOSNotification = (title, body) => {
   if (!built) return;
   try {
     const child = spawn(built.cmd, built.args, {
-      detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
     child.on("error", () => {});
+    if (child.stdout) child.stdout.on("data", () => {});
+    if (child.stderr) child.stderr.on("data", () => {});
     child.unref();
   } catch {}
 };
