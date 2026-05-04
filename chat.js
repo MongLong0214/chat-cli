@@ -21,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.0";
+const VERSION = "1.3.1";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -652,17 +652,34 @@ const main = async () => {
   });
 
   ws.addEventListener("error", (event) => {
-    const err =
-      event?.error?.message ||
+    const err = event?.error;
+    const topMsg =
+      err?.message ||
       event?.message ||
-      event?.error?.code ||
+      err?.code ||
+      err?.name ||
       "알 수 없는 오류";
-    console.error(`${C.err}연결 실패: ${err}${C.reset}`);
+    console.error(`${C.err}연결 실패: ${topMsg}${C.reset}`);
+    let cur = err?.cause;
+    let depth = 0;
+    while (cur && depth < 5) {
+      const detail =
+        cur.code || cur.message || cur.name || String(cur).slice(0, 200);
+      console.error(`${C.gray}  ↳ ${detail}${C.reset}`);
+      cur = cur.cause;
+      depth++;
+    }
+    if (event?.target?.url) {
+      console.error(`${C.gray}  url: ${event.target.url}${C.reset}`);
+    }
+    console.error(`${C.gray}  node: ${process.versions.node}${C.reset}`);
+    console.error(`${C.gray}  platform: ${process.platform}${C.reset}`);
     console.error(
       `${C.gray}확인사항:` +
         `\n  - 인터넷 연결` +
         `\n  - Node 22 이상 (node -v)` +
-        `\n  - 방화벽/프록시가 wss:// 차단하는지${C.reset}`
+        `\n  - 방화벽/프록시/AV가 wss:// 또는 self-signed cert 검사로 차단하는지` +
+        `\n  - VPN / 회사 네트워크 (TLS MITM)${C.reset}`
     );
     process.exit(1);
   });

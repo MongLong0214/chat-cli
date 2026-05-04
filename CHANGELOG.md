@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+- WS error 이벤트 진단 강화: `error.cause` 체인 walk (최대 5depth), node 버전·플랫폼·URL 표시
+- "알 수 없는 오류" fallback 시 디버그 정보 자동 노출
+
 ## 1.3.0
 - `/notify` 명령어: OS 데스크톱 알림 + 터미널 탭 제목 unread 카운터
   - macOS: `osascript`로 시스템 알림 팝업 (권한 자동)
