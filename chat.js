@@ -21,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.3";
+const VERSION = "1.3.4";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -192,86 +192,136 @@ const setTerminalTitle = (title) => {
 
 const trimForNotify = (s, n) => (s.length > n ? s.slice(0, n) + "…" : s);
 
-const spawnOSNotification = (title, body) => {
+const buildNotifyArgs = (title, body) => {
   const oneLine = (s) => s.replace(/[\r\n\t]+/g, " ");
   const t = trimForNotify(oneLine(title), 40);
   const b = trimForNotify(oneLine(body), 200);
+  if (process.platform === "darwin") {
+    const esc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const script = `display notification "${esc(b)}" with title "${esc(t)}"`;
+    return { cmd: "osascript", args: ["-e", script] };
+  }
+  if (process.platform === "linux") {
+    return { cmd: "notify-send", args: ["-a", "chat-cli", t, b] };
+  }
+  if (process.platform === "win32") {
+    const xmlEsc = (s) =>
+      s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+    const psEsc = (s) => s.replace(/'/g, "''");
+    const ps =
+      `$ErrorActionPreference = 'SilentlyContinue';` +
+      `$AppId = 'chat-cli';` +
+      `$RegPath = 'HKCU:\\SOFTWARE\\Classes\\AppUserModelId\\' + $AppId;` +
+      `if (-not (Test-Path $RegPath)) {` +
+      `  New-Item -Path $RegPath -Force | Out-Null;` +
+      `  Set-ItemProperty -Path $RegPath -Name 'DisplayName' -Value 'chat-cli' -Force;` +
+      `  Write-Host 'AppId registered in HKCU';` +
+      `} else { Write-Host 'AppId already in HKCU'; };` +
+      `$shown = $false;` +
+      `try {` +
+      `  $ErrorActionPreference = 'Stop';` +
+      `  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;` +
+      `  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;` +
+      `  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument;` +
+      `  $xml.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text>${xmlEsc(
+        t
+      )}</text><text>${xmlEsc(
+        b
+      )}</text></binding></visual></toast>');` +
+      `  $toast = New-Object Windows.UI.Notifications.ToastNotification $xml;` +
+      `  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($AppId).Show($toast);` +
+      `  Write-Host 'WinRT Toast Show() called';` +
+      `  $shown = $true;` +
+      `} catch { Write-Host ('WinRT failed: ' + $_.Exception.Message); };` +
+      `if (-not $shown) {` +
+      `  try {` +
+      `    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop;` +
+      `    Add-Type -AssemblyName System.Drawing -ErrorAction Stop;` +
+      `    $n = New-Object System.Windows.Forms.NotifyIcon;` +
+      `    $n.Icon = [System.Drawing.SystemIcons]::Information;` +
+      `    $n.BalloonTipTitle = '${psEsc(t)}';` +
+      `    $n.BalloonTipText = '${psEsc(b)}';` +
+      `    $n.Visible = $true;` +
+      `    $n.ShowBalloonTip(5000);` +
+      `    Write-Host 'NotifyIcon balloon shown';` +
+      `    Start-Sleep -Seconds 1;` +
+      `    $n.Dispose();` +
+      `  } catch { Write-Host ('NotifyIcon failed: ' + $_.Exception.Message); };` +
+      `};` +
+      `[System.Media.SystemSounds]::Asterisk.Play();` +
+      `Write-Host 'Sound played'`;
+    return {
+      cmd: "powershell",
+      args: [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-WindowStyle",
+        "Hidden",
+        "-Command",
+        ps,
+      ],
+    };
+  }
+  return null;
+};
+
+const spawnOSNotification = (title, body) => {
+  const built = buildNotifyArgs(title, body);
+  if (!built) return;
   try {
-    if (process.platform === "darwin") {
-      const esc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-      const script = `display notification "${esc(b)}" with title "${esc(t)}"`;
-      spawn("osascript", ["-e", script], {
-        detached: true,
-        stdio: "ignore",
-      }).unref();
-    } else if (process.platform === "linux") {
-      spawn("notify-send", ["-a", "chat-cli", t, b], {
-        detached: true,
-        stdio: "ignore",
-      }).unref();
-    } else if (process.platform === "win32") {
-      const xmlEsc = (s) =>
-        s
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&apos;");
-      const psEsc = (s) => s.replace(/'/g, "''");
-      const ps =
-        `$ErrorActionPreference = 'SilentlyContinue';` +
-        `$AppId = 'chat-cli';` +
-        `$RegPath = 'HKCU:\\SOFTWARE\\Classes\\AppUserModelId\\' + $AppId;` +
-        `if (-not (Test-Path $RegPath)) {` +
-        `  New-Item -Path $RegPath -Force | Out-Null;` +
-        `  Set-ItemProperty -Path $RegPath -Name 'DisplayName' -Value 'chat-cli' -Force;` +
-        `};` +
-        `$toastShown = $false;` +
-        `try {` +
-        `  $ErrorActionPreference = 'Stop';` +
-        `  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;` +
-        `  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;` +
-        `  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument;` +
-        `  $xml.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text>${xmlEsc(
-          t
-        )}</text><text>${xmlEsc(
-          b
-        )}</text></binding></visual></toast>');` +
-        `  $toast = New-Object Windows.UI.Notifications.ToastNotification $xml;` +
-        `  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($AppId).Show($toast);` +
-        `  $toastShown = $true;` +
-        `} catch {};` +
-        `if (-not $toastShown) {` +
-        `  try {` +
-        `    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop;` +
-        `    Add-Type -AssemblyName System.Drawing -ErrorAction Stop;` +
-        `    $n = New-Object System.Windows.Forms.NotifyIcon;` +
-        `    $n.Icon = [System.Drawing.SystemIcons]::Information;` +
-        `    $n.BalloonTipTitle = '${psEsc(t)}';` +
-        `    $n.BalloonTipText = '${psEsc(b)}';` +
-        `    $n.Visible = $true;` +
-        `    $n.ShowBalloonTip(5000);` +
-        `    Start-Sleep -Seconds 6;` +
-        `    $n.Dispose();` +
-        `  } catch {};` +
-        `};` +
-        `[System.Media.SystemSounds]::Asterisk.Play()`;
-      spawn(
-        "powershell",
-        [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-WindowStyle",
-          "Hidden",
-          "-Command",
-          ps,
-        ],
-        { detached: true, stdio: "ignore" }
-      ).unref();
-    }
+    const child = spawn(built.cmd, built.args, {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.on("error", () => {});
+    child.unref();
   } catch {}
 };
+
+const testNotificationDiag = (title, body) =>
+  new Promise((resolve) => {
+    const built = buildNotifyArgs(title, body);
+    if (!built) {
+      resolve("이 OS는 알림 미지원");
+      return;
+    }
+    let out = "";
+    let err = "";
+    let done = false;
+    const finish = (extra) => {
+      if (done) return;
+      done = true;
+      const result = (out + err).trim();
+      resolve(extra ? `${extra}\n${result}` : result || "(출력 없음)");
+    };
+    try {
+      const child = spawn(built.cmd, built.args, {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch {}
+        finish("(10초 타임아웃)");
+      }, 10_000);
+      child.stdout.on("data", (d) => (out += d.toString()));
+      child.stderr.on("data", (d) => (err += d.toString()));
+      child.on("error", (e) => {
+        clearTimeout(timer);
+        finish(`spawn 실패: ${e.message} (${built.cmd} 명령어 PATH에 없음?)`);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        finish(`exit=${code}`);
+      });
+    } catch (e) {
+      finish(`예외: ${e.message}`);
+    }
+  });
 
 const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -850,7 +900,7 @@ const main = async () => {
       bellEnabled = !bellEnabled;
       above.warn(`알림음 ${bellEnabled ? "켜짐" : "꺼짐"}`);
     },
-    notify: () => {
+    notify: async () => {
       config.notify = !config.notify;
       saveConfig(config);
       if (!config.notify) {
@@ -858,14 +908,14 @@ const main = async () => {
         above.warn("데스크톱 알림 꺼짐");
         return;
       }
-      spawnOSNotification(
+      above.info("알림 테스트 발송 중... (최대 10초)");
+      const diag = await testNotificationDiag(
         "chat-cli",
-        "알림 테스트 — 이 팝업이 보이면 정상 작동"
+        "알림 테스트 — 이 팝업이 보이면 정상"
       );
       above.warn(
-        "데스크톱 알림 켜짐 — 테스트 알림 발송됨\n" +
-          "  팝업이 안 보이면 Windows 설정 → 알림 → 켜짐 확인,\n" +
-          "  '집중 지원 (Focus assist)'이 꺼져있는지 확인"
+        `데스크톱 알림 켜짐\n${C.gray}--- PowerShell 진단 ---\n${diag}\n--- end ---${C.reset}\n` +
+          `${C.gray}팝업 안 보이면: Windows 설정 → 알림 ON, Focus Assist OFF${C.reset}`
       );
     },
     update: async () => {

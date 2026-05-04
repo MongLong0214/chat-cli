@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.4
+- `/notify` ON 시 PowerShell 진단 출력을 채팅창에 직접 표시
+  (silent fail 종식, 정확한 실패 원인 노출)
+- 10초 타임아웃, spawn ENOENT 캐치 ("powershell PATH에 없음" 등)
+- `buildNotifyArgs` 헬퍼로 OS별 명령 분리, 동일 PS 스크립트로 진단/실제 알림 모두 사용
+
 ## 1.3.3
 - Windows 알림 진짜 fix:
   1. HKCU 레지스트리에 AppId('chat-cli') **자동 등록** (관리자 권한 불필요, 1회만)
