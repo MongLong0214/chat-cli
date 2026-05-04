@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0
+- `/notify` 명령어: OS 데스크톱 알림 + 터미널 탭 제목 unread 카운터
+  - macOS: `osascript`로 시스템 알림 팝업 (권한 자동)
+  - Linux: `notify-send`
+  - Windows: WinRT 토스트 알림 팝업 (Windows 10+, 무모듈 PowerShell) + 시스템 소리
+  - 풀스크린 IDE/브라우저 사용 중에도 메시지 도착 인지 가능
+  - config.json에 영속 (다음 실행 자동 ON)
+  - 내가 입력하면 unread 0으로 리셋, 종료 시 제목 원복
+- `/help`에서 /bell vs /notify 차이 명시 (BEL vs OS 알림)
+
 ## 1.2.1
 - 레인보우(비비드)와 파스텔을 별도 색 옵션으로 분리
 - `/color` 목록에 9. 레인보우 + 10. 파스텔 둘 다 선택 가능

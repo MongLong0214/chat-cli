@@ -88,7 +88,8 @@ node chat.js "wss://chat-cli-7woy.onrender.com#abc..."
 | `/del` | 내가 보낸 최근 10개 메시지 번호 선택 삭제 (양쪽 화면에서 사라짐) |
 | `/name <새이름>` | 이름 변경 (다음 메시지부터 상대에게 반영) |
 | `/color me` / `/color peer` | 내 / 상대 메시지 색 선택 (빨·주·노·초·파·남·보·흰·레인보우) |
-| `/bell` | 상대 메시지 알림음 토글 |
+| `/bell` | 상대 메시지 시 BEL 문자 (터미널 beep) 토글 |
+| `/notify` | OS 데스크톱 알림 + 탭 제목 unread 카운터 토글 (macOS/Linux/Windows) |
 | `/update` | GitHub에서 최신 chat.js 받아 자동 교체 (시작 시 새 버전 있으면 배너로 알림) |
 
 - URL은 받은 메시지에서 자동 하이라이트 (밑줄 + 파랑)

@@ -1,5 +1,6 @@
 import readline from "readline";
 import crypto from "crypto";
+import { spawn } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
 import {
@@ -20,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.2.1";
+const VERSION = "1.3.0";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -104,7 +105,12 @@ const applyColor = (key, text, offset = 0) => {
 const CONFIG_DIR = join(homedir(), ".chat-cli");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 const LEGACY_NAME_FILE = join(CONFIG_DIR, "name");
-const DEFAULT_CONFIG = { name: null, myColor: "green", peerColor: "yellow" };
+const DEFAULT_CONFIG = {
+  name: null,
+  myColor: "green",
+  peerColor: "yellow",
+  notify: false,
+};
 
 const isValidColor = (key) => COLOR_CHOICES.some((c) => c.key === key);
 
@@ -129,6 +135,7 @@ const loadConfig = () => {
     else out.name = sanitizeDisplay(out.name).trim().slice(0, MAX_NAME) || null;
     if (!isValidColor(out.myColor)) out.myColor = DEFAULT_CONFIG.myColor;
     if (!isValidColor(out.peerColor)) out.peerColor = DEFAULT_CONFIG.peerColor;
+    out.notify = !!out.notify;
     return out;
   };
   try {
@@ -177,6 +184,58 @@ const sanitizeDisplay = (s) => {
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+};
+
+const setTerminalTitle = (title) => {
+  if (process.stdout.isTTY) process.stdout.write(`\x1b]0;${title}\x07`);
+};
+
+const trimForNotify = (s, n) => (s.length > n ? s.slice(0, n) + "…" : s);
+
+const spawnOSNotification = (title, body) => {
+  const oneLine = (s) => s.replace(/[\r\n\t]+/g, " ");
+  const t = trimForNotify(oneLine(title), 40);
+  const b = trimForNotify(oneLine(body), 200);
+  try {
+    if (process.platform === "darwin") {
+      const esc = (s) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const script = `display notification "${esc(b)}" with title "${esc(t)}"`;
+      spawn("osascript", ["-e", script], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+    } else if (process.platform === "linux") {
+      spawn("notify-send", ["-a", "chat-cli", t, b], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+    } else if (process.platform === "win32") {
+      const xmlEsc = (s) =>
+        s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&apos;");
+      const ps =
+        `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;` +
+        `[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;` +
+        `$xml = New-Object Windows.Data.Xml.Dom.XmlDocument;` +
+        `$xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>${xmlEsc(
+          t
+        )}</text><text>${xmlEsc(
+          b
+        )}</text></binding></visual></toast>');` +
+        `$toast = New-Object Windows.UI.Notifications.ToastNotification $xml;` +
+        `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('chat-cli').Show($toast);` +
+        `[System.Media.SystemSounds]::Asterisk.Play()`;
+      spawn(
+        "powershell",
+        ["-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
+        { detached: true, stdio: "ignore" }
+      ).unref();
+    }
+  } catch {}
 };
 
 const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
@@ -353,7 +412,20 @@ const main = async () => {
   let peerNameConfirmed = false;
   let bellEnabled = false;
   let pendingDelSelection = null;
+  let unreadCount = 0;
   const messageLog = [];
+
+  const markRead = () => {
+    if (unreadCount === 0) return;
+    unreadCount = 0;
+    setTerminalTitle("chat");
+  };
+  const onPeerActivity = (text) => {
+    if (!config.notify) return;
+    unreadCount++;
+    setTerminalTitle(`💬 ${peerName} (${unreadCount})`);
+    spawnOSNotification(peerName, text);
+  };
 
   const genMsgId = () => crypto.randomBytes(4).toString("hex");
   const addMessage = (entry) => {
@@ -546,6 +618,7 @@ const main = async () => {
     });
     printAbovePrompt(formatMsg(peerName, text, config.peerColor, rainbowOffset));
     if (bellEnabled) process.stdout.write("\x07");
+    onPeerActivity(text);
   };
 
   const decodeFrame = (raw) => {
@@ -592,6 +665,7 @@ const main = async () => {
   });
 
   ws.addEventListener("close", (event) => {
+    if (config.notify) setTerminalTitle("");
     const reason = event?.reason || "";
     const code = event?.code;
     if (reason === "room full" || (code === 1008 && !sharedKey)) {
@@ -646,7 +720,8 @@ const main = async () => {
         "  /del                      내가 보낸 최근 메시지 선택 삭제",
         "  /name <새이름>            내 이름 변경",
         "  /color <me|peer>          내/상대 메시지 색 변경 (번호 선택)",
-        `  /bell                     상대 메시지 알림음 토글 (현재: ${bellEnabled ? "on" : "off"})`,
+        `  /bell                     상대 메시지 알림음 (BEL 문자) 토글 (현재: ${bellEnabled ? "on" : "off"})`,
+        `  /notify                   OS 데스크톱 알림 + 탭 제목 카운터 토글 (현재: ${config.notify ? "on" : "off"})`,
         `  /update                   최신 버전으로 자동 업데이트${C.reset}`,
       ];
       printAbovePrompt(lines.join("\n"));
@@ -719,6 +794,17 @@ const main = async () => {
     bell: () => {
       bellEnabled = !bellEnabled;
       above.warn(`알림음 ${bellEnabled ? "켜짐" : "꺼짐"}`);
+    },
+    notify: () => {
+      config.notify = !config.notify;
+      saveConfig(config);
+      if (!config.notify) markRead();
+      above.warn(
+        `데스크톱 알림 ${config.notify ? "켜짐" : "꺼짐"}` +
+          (config.notify
+            ? " (다음 메시지부터 OS 알림 + 탭 제목 카운터)"
+            : "")
+      );
     },
     update: async () => {
       above.info("업데이트 확인 중...");
@@ -840,6 +926,7 @@ const main = async () => {
   });
 
   rl.on("line", (line) => {
+    markRead();
     try {
       if (pendingDelSelection) {
         handleDelSelection(line);
@@ -882,6 +969,7 @@ const main = async () => {
   });
 
   const gracefulExit = () => {
+    if (config.notify) setTerminalTitle("");
     try {
       ws.close(1000);
     } catch {}
