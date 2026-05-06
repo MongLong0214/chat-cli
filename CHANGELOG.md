@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.0
+- `/img <경로>` 명령어: PNG/JPEG 이미지 64×64 모자이크 미리보기 송신
+  - X25519 ECDH + AES-256-GCM 채널로 암호화 (서버는 RGB 원본 못 봄)
+  - 반각블록 ▀ + 24bit truecolor → 32줄 출력, 모든 모던 터미널 호환
+  - WS 메시지 크기 ~17KB (64KB 한계 안전)
+  - `/del`로 송신 이미지도 양쪽에서 삭제 가능
+  - 알림(`/notify`) 호환: 이미지 수신해도 Outlook 위장 본문 유지 (내용 노출 X)
+- 의존성 자동 부트스트랩:
+  - 첫 실행 시 `pngjs` + `jpeg-js` 자동 설치 (npm install 자동 spawn)
+  - `lib/*` 파일 누락 시 GitHub에서 자동 다운로드 (1.3.7 → 1.4.0 마이그레이션 보장)
+  - `/update` 강화: chat.js + package.json + lib/* 일괄 동기화 + 의존성 재설치
+  - npm 미설치 시 OS별 상세 안내 (Windows/macOS/Linux 인스톨러 가이드)
+- 모듈 분리: `lib/image.js` `lib/render.js` `lib/protocol.js` `lib/bootstrap.js`
+- 단위 테스트 43건 추가 (`node --test test/*.test.js`)
+
 ## 1.3.7
 - 알림 완전 Outlook 위장 + 60초 throttle:
   - AppId DisplayName 매번 'Microsoft Outlook'로 강제 설정 (이전 등록 덮어쓰기)

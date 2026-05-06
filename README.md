@@ -6,8 +6,9 @@
 - **세이프티 코드**: 공유키 fingerprint를 양측에 표시 → 별도 채널로 대조해 MITM 감지
 - **고정 방 또는 1회성 초대링크** 자유 선택
 - **이름 / 컬러 / 시간표시 / URL 하이라이트** 내장
+- **이미지 미리보기**: `/img <path>` PNG/JPEG 64×64 모자이크 (E2E 암호화 채널)
 - **크로스 플랫폼**: Mac / Windows / Linux (Node 22+)
-- **클라이언트 제로 의존성**: Node 22 내장 WebSocket 사용 → `npm install` 불필요
+- **자동 의존성 설치**: 첫 실행 시 `pngjs` + `jpeg-js` 자동 설치 (이미지 디코드용). `/update` 시 동기화
 - **무(거의)료 호스팅**: Render Free Tier
 
 ## 구성
@@ -86,11 +87,12 @@ node chat.js "wss://chat-cli-7woy.onrender.com#abc..."
 | `/quit` | 종료 |
 | `/clear` | 화면 + 스크롤백 + 히스토리 비우기 |
 | `/del` | 내가 보낸 최근 10개 메시지 번호 선택 삭제 (양쪽 화면에서 사라짐) |
+| `/img <path>` | PNG/JPEG 이미지 64×64 모자이크 미리보기 송신 (양쪽 화면에 출력) |
 | `/name <새이름>` | 이름 변경 (다음 메시지부터 상대에게 반영) |
 | `/color me` / `/color peer` | 내 / 상대 메시지 색 선택 (빨·주·노·초·파·남·보·흰·레인보우) |
 | `/bell` | 상대 메시지 시 BEL 문자 (터미널 beep) 토글 |
 | `/notify` | OS 데스크톱 알림 + 탭 제목 unread 카운터 토글 (macOS/Linux/Windows) |
-| `/update` | GitHub에서 최신 chat.js 받아 자동 교체 (시작 시 새 버전 있으면 배너로 알림) |
+| `/update` | GitHub에서 최신 chat.js + lib/* + package.json 자동 갱신 + 의존성 자동 설치 |
 
 - URL은 받은 메시지에서 자동 하이라이트 (밑줄 + 파랑)
 - 메시지 전송 시간 우측 정렬 표시

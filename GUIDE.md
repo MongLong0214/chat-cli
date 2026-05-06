@@ -32,7 +32,8 @@
    cd $HOME\Desktop\chat-cli
    ```
 
-**끝입니다.** `npm install` 없어요 (Node 22+ 내장 WebSocket 사용).
+**끝입니다.** 첫 실행 시 필요한 라이브러리가 자동 설치돼요 (이미지 미리보기용).
+인터넷 연결만 되어 있으면 8~30초 안에 끝남.
 
 ---
 
@@ -93,7 +94,35 @@ node chat.js "wss://chat-cli-7woy.onrender.com#받은토큰"
 | `/name 새이름` | 내 이름 바꾸기 |
 | `/color me` / `/color peer` | 색 바꾸기 (빨·주·노·초·파·남·보·흰·레인보우) |
 | `/bell` | 상대 메시지 올 때 소리 on/off |
+| `/notify` | 데스크톱 알림 on/off (Windows 10/11 토스트) |
+| `/img <경로>` | PNG/JPEG 이미지 64×64 모자이크 미리보기 송신 |
+| `/del` | 내가 보낸 최근 메시지 삭제 (양쪽 화면에서 사라짐) |
+| `/update` | 최신 버전으로 자동 업데이트 (의존성도 자동 설치) |
 | `/quit` | 종료 |
+
+### 이미지 보내기 (`/img`)
+
+PowerShell에서 이미지 경로를 끌어다 놓으면 따옴표가 자동으로 붙어요:
+```powershell
+/img "C:\Users\me\Desktop\screenshot.png"
+```
+- 지원: PNG, JPEG (.jpg/.jpeg)
+- 크기: 64×64 모자이크 (32줄)
+- 양쪽 화면에 동시에 보임
+- `/del`로 삭제 가능
+
+---
+
+## npm 자동 설치 실패 시
+
+업데이트나 첫 실행 때 의존성 설치가 실패하면 화면에 OS별 가이드가 나옵니다.
+보통은 Node.js 재설치만 하면 해결돼요:
+
+1. https://nodejs.org/ko/download → **Windows Installer (.msi) LTS** 다운로드
+2. 설치 시 **"Add to PATH"** 체크 (기본값)
+3. PowerShell **완전히 닫고** 새로 열기
+4. `node -v` 와 `npm -v` 로 버전 확인
+5. 다시 `node chat.js 방이름` 실행
 
 ---
 

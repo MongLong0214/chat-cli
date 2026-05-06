@@ -2,7 +2,8 @@ import readline from "readline";
 import crypto from "crypto";
 import { spawn } from "child_process";
 import { homedir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import {
   mkdirSync,
   existsSync,
@@ -21,11 +22,71 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.7";
+const VERSION = "1.4.0";
 const REPO = "MongLong0214/chat-cli";
-const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
-const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
+const REPO_RAW = `https://raw.githubusercontent.com/${REPO}/main`;
+const UPDATE_URL_CHAT = `${REPO_RAW}/chat.js`;
+const UPDATE_URL_CHANGELOG = `${REPO_RAW}/CHANGELOG.md`;
+const UPDATE_URL_PACKAGE = `${REPO_RAW}/package.json`;
 const UPDATE_FETCH_TIMEOUT_MS = 5000;
+const REQUIRED_LIB_FILES = ["bootstrap.js", "image.js", "render.js", "protocol.js"];
+
+const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+
+const ensureLibFiles = async () => {
+  const libDir = join(SCRIPT_DIR, "lib");
+  mkdirSync(libDir, { recursive: true });
+  const missing = REQUIRED_LIB_FILES.filter((f) => !existsSync(join(libDir, f)));
+  if (missing.length === 0) return;
+  console.log(`\x1b[33mlib/ 파일 자동 다운로드 중... (${missing.join(", ")})\x1b[0m`);
+  await Promise.all(
+    missing.map(async (f) => {
+      const content = await fetchWithTimeout(`${REPO_RAW}/lib/${f}`, 10000);
+      writeFileSync(join(libDir, f), content);
+    })
+  );
+  console.log("\x1b[32m✓ lib/ 파일 준비 완료\x1b[0m");
+};
+
+try {
+  await ensureLibFiles();
+} catch (err) {
+  console.error(`\x1b[31m❌ lib/ 다운로드 실패: ${err.message}\x1b[0m`);
+  console.error(`\x1b[90m수동 해결: ${REPO_RAW}/lib/* 파일을 ${SCRIPT_DIR}/lib/ 에 저장\x1b[0m`);
+  process.exit(1);
+}
+
+const [bootstrapMod, renderMod, protocolMod] = await Promise.all([
+  import("./lib/bootstrap.js"),
+  import("./lib/render.js"),
+  import("./lib/protocol.js"),
+]);
+const { ensureDependencies } = bootstrapMod;
+const { renderImage } = renderMod;
+const { encodeImagePayload, decodeImagePayload, IMG_KIND } = protocolMod;
+
+try {
+  await ensureDependencies({
+    fetchPackageJson: async () => JSON.parse(await fetchWithTimeout(UPDATE_URL_PACKAGE, 10000)),
+    log: (msg) => console.log(msg),
+  });
+} catch {
+  process.exit(1);
+}
+
+const { decodeAndResize } = await import("./lib/image.js");
 
 const SERVER = process.env.CHAT_SERVER || "wss://chat-cli-7woy.onrender.com";
 const MAX_LINE = 4096;
@@ -327,18 +388,6 @@ const testNotificationDiag = (title, body) =>
     }
   });
 
-const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
 const extractVersion = (source) =>
   source.match(/const VERSION = "([^"]+)"/)?.[1] || null;
 
@@ -388,22 +437,59 @@ const performUpdate = async () => {
   ) {
     throw new Error("다운로드된 파일이 유효하지 않음 (손상/빈 응답)");
   }
+  const [pkgRemote, ...libValues] = await Promise.all([
+    fetchWithTimeout(UPDATE_URL_PACKAGE),
+    ...REQUIRED_LIB_FILES.map((f) => fetchWithTimeout(`${REPO_RAW}/lib/${f}`)),
+  ]);
+  if (!pkgRemote.includes('"name"')) {
+    throw new Error("package.json 응답이 유효하지 않음");
+  }
+  REQUIRED_LIB_FILES.forEach((f, i) => {
+    if (libValues[i].length < 50) {
+      throw new Error(`lib/${f} 응답이 너무 작음 (손상)`);
+    }
+  });
+
   const scriptPath = realpathSync(process.argv[1]);
-  const tmpPath = `${scriptPath}.new`;
+  const scriptDir = dirname(scriptPath);
+  const libDir = join(scriptDir, "lib");
+  mkdirSync(libDir, { recursive: true });
+
   const backupPath = `${scriptPath}.bak`;
   try {
     writeFileSync(backupPath, readFileSync(scriptPath));
   } catch {}
+
+  const writes = [
+    { final: scriptPath, content: source },
+    { final: join(scriptDir, "package.json"), content: pkgRemote },
+    ...REQUIRED_LIB_FILES.map((f, i) => ({
+      final: join(libDir, f),
+      content: libValues[i],
+    })),
+  ];
+  const tmpPaths = writes.map((w) => `${w.final}.new`);
   try {
-    writeFileSync(tmpPath, source);
-    renameSync(tmpPath, scriptPath);
+    writes.forEach((w, i) => writeFileSync(tmpPaths[i], w.content));
+    writes.forEach((w, i) => renameSync(tmpPaths[i], w.final));
   } catch (err) {
-    try {
-      unlinkSync(tmpPath);
-    } catch {}
-    throw err;
+    for (const t of tmpPaths) {
+      try {
+        unlinkSync(t);
+      } catch {}
+    }
+    throw new Error(`atomic swap 실패: ${err.message}`);
   }
-  return { remoteVersion, same: false, backupPath };
+
+  let depsInstalled = false;
+  try {
+    const result = await ensureDependencies({
+      fetchPackageJson: async () => JSON.parse(pkgRemote),
+      log: (msg) => console.log(msg),
+    });
+    depsInstalled = result.installed;
+  } catch {}
+  return { remoteVersion, same: false, backupPath, depsInstalled };
 };
 
 const arg = process.argv[2];
@@ -535,9 +621,13 @@ const main = async () => {
       if (m.deleted) continue;
       const colorKey =
         m.sender === "me" ? config.myColor : config.peerColor;
-      lines.push(
-        formatMsg(m.name, m.text, colorKey, rainbowOffset, m.time)
-      );
+      if (m.kind === IMG_KIND && m.rendered) {
+        lines.push(formatImageBlock(m.name, m.rendered, colorKey, m.time));
+      } else {
+        lines.push(
+          formatMsg(m.name, m.text, colorKey, rainbowOffset, m.time)
+        );
+      }
     }
     process.stdout.write(
       "\x1b[2J\x1b[3J\x1b[H" + (lines.length ? lines.join("\n") + "\n" : "")
@@ -600,6 +690,12 @@ const main = async () => {
       return `${colored}${" ".repeat(pad)}${C.gray}${time}${C.reset}`;
     }
     return `${colored}  ${C.gray}${time}${C.reset}`;
+  };
+
+  const formatImageBlock = (name, ansi, colorKey, savedTime) => {
+    const time = savedTime || now();
+    const header = `${applyColor(colorKey, `[${name}] 🖼`, rainbowOffset)} ${C.gray}${time}${C.reset}`;
+    return `${header}\n${ansi}`;
   };
 
   const replaceTypedLine = (typedLine, newContent) => {
@@ -699,6 +795,30 @@ const main = async () => {
         redrawScreen();
         above.warn(`${peerName}이(가) 메시지 ${count}개 삭제`);
       }
+      return;
+    }
+    if (parsed.kind === IMG_KIND) {
+      let payload;
+      try {
+        payload = decodeImagePayload(parsed);
+      } catch (err) {
+        above.warn(`이미지 수신 실패: ${err.message}`);
+        return;
+      }
+      const ansi = renderImage(payload.rgb, payload.w, payload.h);
+      addMessage({
+        id: payload.id || genMsgId(),
+        sender: "peer",
+        name: peerName,
+        kind: IMG_KIND,
+        rendered: ansi,
+        time: now(),
+      });
+      printAbovePrompt(
+        formatImageBlock(peerName, ansi, config.peerColor)
+      );
+      if (bellEnabled) process.stdout.write("\x07");
+      onPeerActivity();
       return;
     }
     const text =
@@ -832,6 +952,7 @@ const main = async () => {
         "  /quit                     종료",
         "  /clear                    화면 + 스크롤백 비우기 (히스토리도 비움)",
         "  /del                      내가 보낸 최근 메시지 선택 삭제",
+        "  /img <경로>               PNG/JPEG 이미지 64x64 모자이크 미리보기 송신",
         "  /name <새이름>            내 이름 변경",
         "  /color <me|peer>          내/상대 메시지 색 변경 (번호 선택)",
         `  /bell                     상대 메시지 알림음 (BEL 문자) 토글 (현재: ${bellEnabled ? "on" : "off"})`,
@@ -860,8 +981,10 @@ const main = async () => {
         `${C.gray}내가 보낸 최근 ${myMessages.length}개:${C.reset}`,
       ];
       myMessages.forEach((m, i) => {
-        const preview =
-          m.text.length > 50 ? m.text.slice(0, 50) + "..." : m.text;
+        let preview;
+        if (m.kind === IMG_KIND) preview = "🖼 (이미지)";
+        else if (m.text.length > 50) preview = m.text.slice(0, 50) + "...";
+        else preview = m.text;
         lines.push(
           `  ${i + 1}. ${preview}  ${C.gray}${m.time}${C.reset}`
         );
@@ -932,14 +1055,55 @@ const main = async () => {
         if (result.same) {
           above.warn(`이미 최신 버전입니다 (v${VERSION})`);
         } else {
+          const depsLine = result.depsInstalled
+            ? "의존성 자동 설치 완료\n"
+            : "";
           above.warn(
             `v${VERSION} → v${result.remoteVersion} 업데이트 완료.\n` +
+              depsLine +
               `백업: ${result.backupPath}\n` +
               `/quit 후 다시 실행하면 새 버전이 적용됩니다.`
           );
         }
       } catch (err) {
         above.err(`업데이트 실패: ${err.message}`);
+      }
+    },
+    img: async (pathArg) => {
+      if (!sharedKey) return above.warn("연결되지 않음");
+      const path = (pathArg || "").trim();
+      if (!path) return above.warn("사용법: /img <이미지 경로>");
+      let decoded;
+      try {
+        decoded = await decodeAndResize(path);
+      } catch (err) {
+        return above.err(`/img: ${err.message}`);
+      }
+      const id = genMsgId();
+      const t = now();
+      const ansi = renderImage(decoded.rgb, decoded.width, decoded.height);
+      addMessage({
+        id,
+        sender: "me",
+        name: myName,
+        kind: IMG_KIND,
+        rendered: ansi,
+        time: t,
+      });
+      printAbovePrompt(formatImageBlock(myName, ansi, config.myColor, t));
+      try {
+        sendEncrypted(
+          encodeImagePayload({
+            id,
+            name: myName,
+            rgb: decoded.rgb,
+            t: Date.now(),
+            w: decoded.width,
+            h: decoded.height,
+          })
+        );
+      } catch (err) {
+        above.err(`전송 실패: ${err.message}`);
       }
     },
   };
