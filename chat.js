@@ -222,8 +222,8 @@ const buildNotifyArgs = (title, body) => {
       `$AppId = 'chat-cli';` +
       `$RegPath = 'HKCU:\\SOFTWARE\\Classes\\AppUserModelId\\' + $AppId;` +
       `if (-not (Test-Path $RegPath)) { New-Item -Path $RegPath -Force | Out-Null; };` +
-      `Set-ItemProperty -Path $RegPath -Name 'DisplayName' -Value 'Microsoft Outlook' -Force;` +
-      `Write-Host 'AppId DisplayName set to Microsoft Outlook';` +
+      `Set-ItemProperty -Path $RegPath -Name 'DisplayName' -Value '${NOTIFY_TITLE}' -Force;` +
+      `Write-Host 'AppId DisplayName set to ${NOTIFY_TITLE}';` +
       `$shown = $false;` +
       `try {` +
       `  $ErrorActionPreference = 'Stop';` +
