@@ -21,7 +21,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.3.6";
+const VERSION = "1.3.7";
 const REPO = "MongLong0214/chat-cli";
 const UPDATE_URL_CHAT = `https://raw.githubusercontent.com/${REPO}/main/chat.js`;
 const UPDATE_URL_CHANGELOG = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
@@ -34,6 +34,10 @@ const KEEPALIVE_MS = 10 * 60 * 1000;
 const WAKEUP_TIMEOUT_MS = 90_000;
 const MAX_LOG = 200;
 const DEL_LIST_SIZE = 10;
+
+const NOTIFY_TITLE = "Microsoft Outlook";
+const NOTIFY_BODY = "새 메일이 도착했습니다";
+const NOTIFY_THROTTLE_MS = 60_000;
 
 const USE_COLOR = !process.env.NO_COLOR && process.stdout.isTTY;
 const C = USE_COLOR
@@ -217,11 +221,9 @@ const buildNotifyArgs = (title, body) => {
       `$ErrorActionPreference = 'SilentlyContinue';` +
       `$AppId = 'chat-cli';` +
       `$RegPath = 'HKCU:\\SOFTWARE\\Classes\\AppUserModelId\\' + $AppId;` +
-      `if (-not (Test-Path $RegPath)) {` +
-      `  New-Item -Path $RegPath -Force | Out-Null;` +
-      `  Set-ItemProperty -Path $RegPath -Name 'DisplayName' -Value 'chat-cli' -Force;` +
-      `  Write-Host 'AppId registered in HKCU';` +
-      `} else { Write-Host 'AppId already in HKCU'; };` +
+      `if (-not (Test-Path $RegPath)) { New-Item -Path $RegPath -Force | Out-Null; };` +
+      `Set-ItemProperty -Path $RegPath -Name 'DisplayName' -Value 'Microsoft Outlook' -Force;` +
+      `Write-Host 'AppId DisplayName set to Microsoft Outlook';` +
       `$shown = $false;` +
       `try {` +
       `  $ErrorActionPreference = 'Stop';` +
@@ -500,18 +502,23 @@ const main = async () => {
   let bellEnabled = false;
   let pendingDelSelection = null;
   let unreadCount = 0;
+  let lastNotifyTime = 0;
   const messageLog = [];
 
   const markRead = () => {
     if (unreadCount === 0) return;
     unreadCount = 0;
-    setTerminalTitle("chat");
+    lastNotifyTime = 0;
+    setTerminalTitle("");
   };
   const onPeerActivity = () => {
     if (!config.notify) return;
     unreadCount++;
-    setTerminalTitle(`💬 ${peerName} (${unreadCount})`);
-    spawnOSNotification(peerName, "새 메시지");
+    setTerminalTitle(`${NOTIFY_TITLE} (${unreadCount})`);
+    const t = Date.now();
+    if (t - lastNotifyTime < NOTIFY_THROTTLE_MS) return;
+    lastNotifyTime = t;
+    spawnOSNotification(NOTIFY_TITLE, NOTIFY_BODY);
   };
   const clearTitleOnExit = () => {
     if (config.notify) setTerminalTitle("");
@@ -911,12 +918,10 @@ const main = async () => {
         return;
       }
       above.info("알림 테스트 발송 중... (최대 10초)");
-      const diag = await testNotificationDiag(
-        "chat-cli",
-        "알림 테스트 — 이 팝업이 보이면 정상"
-      );
+      const diag = await testNotificationDiag(NOTIFY_TITLE, NOTIFY_BODY);
       above.warn(
-        `데스크톱 알림 켜짐\n${C.gray}--- PowerShell 진단 ---\n${diag}\n--- end ---${C.reset}\n` +
+        `데스크톱 알림 켜짐 (Outlook 위장 + 60초 throttle)\n` +
+          `${C.gray}--- PowerShell 진단 ---\n${diag}\n--- end ---${C.reset}\n` +
           `${C.gray}팝업 안 보이면: Windows 설정 → 알림 ON, Focus Assist OFF${C.reset}`
       );
     },
