@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.2
+- `/diag` 명령 추가: 알림 throttle 디버깅용 진단 정보 출력
+  - version, pid, script path, node, platform
+  - config.notify, bellEnabled, unreadCount
+  - lastNotifyTime, now - lastNotifyTime, throttle 적용 여부
+  - peerName, peerNameConfirmed, tokenHash16
+- `/help`에 `/diag` 등록
+
 ## 1.4.1
 - Single-instance lock (token별, `lib/lock.js`):
   - 같은 방(token)에 chat-cli가 이미 실행 중이면 두 번째 인스턴스 시작 거부 (PID 안내)

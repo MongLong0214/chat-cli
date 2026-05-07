@@ -22,7 +22,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.4.1";
+const VERSION = "1.4.2";
 const REPO = "MongLong0214/chat-cli";
 const REPO_RAW = `https://raw.githubusercontent.com/${REPO}/main`;
 const UPDATE_URL_CHAT = `${REPO_RAW}/chat.js`;
@@ -963,6 +963,7 @@ const main = async () => {
         "  /clear                    화면 + 스크롤백 비우기 (히스토리도 비움)",
         "  /del                      내가 보낸 최근 메시지 선택 삭제",
         "  /img <경로>               PNG/JPEG 이미지 64x64 모자이크 미리보기 송신",
+        "  /diag                     진단 정보 출력 (디버깅용)",
         "  /name <새이름>            내 이름 변경",
         "  /color <me|peer>          내/상대 메시지 색 변경 (번호 선택)",
         `  /bell                     상대 메시지 알림음 (BEL 문자) 토글 (현재: ${bellEnabled ? "on" : "off"})`,
@@ -1115,6 +1116,33 @@ const main = async () => {
       } catch (err) {
         above.err(`전송 실패: ${err.message}`);
       }
+    },
+    diag: () => {
+      const scriptPath = (() => {
+        try { return realpathSync(process.argv[1] || ""); } catch { return process.argv[1] || "?"; }
+      })();
+      const dt = lastNotifyTime ? Date.now() - lastNotifyTime : null;
+      const throttleActive = dt !== null && dt < NOTIFY_THROTTLE_MS;
+      const lines = [
+        `${C.gray}--- 진단 (붙여서 보내주세요) ---`,
+        `version: ${VERSION}`,
+        `pid: ${process.pid}`,
+        `script: ${scriptPath}`,
+        `node: ${process.versions.node}`,
+        `platform: ${process.platform}`,
+        `config.notify: ${config.notify ? "on" : "off"}`,
+        `bellEnabled: ${bellEnabled}`,
+        `unreadCount: ${unreadCount}`,
+        `lastNotifyTime: ${lastNotifyTime || "(아직 0)"}`,
+        `now - lastNotifyTime: ${dt !== null ? dt + "ms" : "(없음)"}`,
+        `NOTIFY_THROTTLE_MS: ${NOTIFY_THROTTLE_MS}`,
+        `throttle 적용 중: ${throttleActive}`,
+        `peerName: ${peerName}`,
+        `peerNameConfirmed: ${peerNameConfirmed}`,
+        `tokenHash16: ${crypto.createHash("sha256").update(token).digest("hex").slice(0, 16)}`,
+        `------${C.reset}`,
+      ];
+      printAbovePrompt(lines.join("\n"));
     },
   };
 
