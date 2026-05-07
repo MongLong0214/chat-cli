@@ -22,14 +22,14 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.1";
 const REPO = "MongLong0214/chat-cli";
 const REPO_RAW = `https://raw.githubusercontent.com/${REPO}/main`;
 const UPDATE_URL_CHAT = `${REPO_RAW}/chat.js`;
 const UPDATE_URL_CHANGELOG = `${REPO_RAW}/CHANGELOG.md`;
 const UPDATE_URL_PACKAGE = `${REPO_RAW}/package.json`;
 const UPDATE_FETCH_TIMEOUT_MS = 5000;
-const REQUIRED_LIB_FILES = ["bootstrap.js", "image.js", "render.js", "protocol.js"];
+const REQUIRED_LIB_FILES = ["bootstrap.js", "image.js", "render.js", "protocol.js", "lock.js"];
 
 const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -492,7 +492,11 @@ const performUpdate = async () => {
   return { remoteVersion, same: false, backupPath, depsInstalled };
 };
 
-const arg = process.argv[2];
+const { acquireLock, releaseLock } = await import("./lib/lock.js");
+
+const FORCE_UNLOCK = process.argv.includes("--force-unlock");
+const cliArgs = process.argv.slice(2).filter((a) => a !== "--force-unlock");
+const arg = cliArgs[0];
 const envRoom = process.env.CHAT_ROOM;
 let token, host, wasGenerated;
 if (!arg && !envRoom) {
@@ -520,6 +524,12 @@ if (!arg && !envRoom) {
   wasGenerated = false;
 }
 host = host.replace(/\/+$/, "");
+
+{
+  const lockResult = acquireLock(token, { force: FORCE_UNLOCK });
+  if (!lockResult.acquired) process.exit(1);
+}
+process.on("exit", () => releaseLock(token));
 
 const main = async () => {
   const config = loadConfig();
@@ -1253,6 +1263,7 @@ const main = async () => {
 
   const gracefulExit = () => {
     clearTitleOnExit();
+    releaseLock(token);
     try {
       ws.close(1000);
     } catch {}

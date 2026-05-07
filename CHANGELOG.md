@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.1
+- Single-instance lock (token별, `lib/lock.js`):
+  - 같은 방(token)에 chat-cli가 이미 실행 중이면 두 번째 인스턴스 시작 거부 (PID 안내)
+  - **`--force-unlock` 플래그**: PID 잘못 잡힌 false-positive 케이스 강제 해제 (escape hatch)
+  - **Lock age 검사**: 1시간 이상 stale lockfile 자동 삭제 (PID 재할당 false-positive 방어)
+  - **`wx` flag**: TOCTOU race 차단 (동시 acquire 시 한 쪽만 성공)
+  - 이전 인스턴스 비정상 종료 시 stale lockfile 자동 무시 (PID 생존 검사 + EPERM 보수적 처리)
+  - 정상 종료(/quit, SIGTERM, SIGHUP)에서 lockfile 자동 정리
+  - 다른 token은 영향 없음 (여러 친구와 동시 chat 가능)
+- 60초 알림 throttle이 친구 PC에서 깨지던 근본 원인 해결:
+  - 친구가 실수로 chat을 두 번 띄우면 server.js 좀비 대체로 새 인스턴스 활성 → lastNotifyTime=0 리셋 → 매 메시지마다 알림 발송 현상 차단
+  - server.js 좀비 대체 로직은 보존 (defense in depth: client lock 1차 + server replace 2차 fallback)
+- 단위 테스트 16개 추가 (`test/lock.test.js`): tokenLockPath, isProcessAlive, acquireLock 정상/에러 경로, releaseLock PID 보호, stale 처리, force-unlock
+
 ## 1.4.0
 - `/img <경로>` 명령어: PNG/JPEG 이미지 64×64 모자이크 미리보기 송신
   - X25519 ECDH + AES-256-GCM 채널로 암호화 (서버는 RGB 원본 못 봄)

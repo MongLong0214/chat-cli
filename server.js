@@ -33,6 +33,9 @@ wss.on("connection", (ws, req) => {
   let peers = rooms.get(token) || [];
 
   // 좀비 대체: 같은 name 또는 같은 pk로 재접속 시 이전 세션 강제 교체
+  // ※ 제거 금지: 클라이언트의 token-level lockfile(lib/lock.js)이 1차 방어선이고
+  //   여기 좀비 대체는 네트워크 단절·crash 후 재접속 회복용 2차 fallback이다.
+  //   (defense in depth — 둘 다 의도된 보호선. 클라이언트 lock 우회/실패 시 서버가 자동 회복)
   const dupIdx = peers.findIndex(
     (p) => (safeName && p.name === safeName) || p.pk === pk
   );
