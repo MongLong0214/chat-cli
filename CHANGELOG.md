@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.3
+- 60초 알림 throttle 진짜 fix:
+  - 1.3.7부터 `markRead`가 `lastNotifyTime = 0` 리셋해서 throttle 무력화하던 버그
+  - 수신자가 chat 창에 어떤 키든 + 엔터 한 번 입력 → markRead → throttle reset → 다음 메시지 즉시 알림 → 매 메시지마다 토스트
+  - `/diag` 진단으로 친구 PC에서 `lastNotifyTime: 0` 확인 → markRead가 매번 리셋한다는 결정적 증거
+  - **수정**: `markRead`에서 `lastNotifyTime = 0` 줄 제거 → throttle은 시간 기반(60초)으로만 동작
+  - 이제 친구가 chat 활동해도 60초 안에는 새 알림 X
+
 ## 1.4.2
 - `/diag` 명령 추가: 알림 throttle 디버깅용 진단 정보 출력
   - version, pid, script path, node, platform

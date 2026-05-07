@@ -22,7 +22,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.4.2";
+const VERSION = "1.4.3";
 const REPO = "MongLong0214/chat-cli";
 const REPO_RAW = `https://raw.githubusercontent.com/${REPO}/main`;
 const UPDATE_URL_CHAT = `${REPO_RAW}/chat.js`;
@@ -604,7 +604,6 @@ const main = async () => {
   const markRead = () => {
     if (unreadCount === 0) return;
     unreadCount = 0;
-    lastNotifyTime = 0;
     setTerminalTitle("");
   };
   const onPeerActivity = () => {
