@@ -22,7 +22,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.4.3";
+const VERSION = "1.4.5";
 const REPO = "MongLong0214/chat-cli";
 const REPO_RAW = `https://raw.githubusercontent.com/${REPO}/main`;
 const UPDATE_URL_CHAT = `${REPO_RAW}/chat.js`;
@@ -589,12 +589,23 @@ const main = async () => {
     `${host}/?token=${encodeURIComponent(token)}` +
     `&pk=${myPk}` +
     `&name=${encodeURIComponent(myName)}`;
-  const ws = new WebSocket(wsUrl);
-  ws.binaryType = "arraybuffer";
+
+  let ws = null;
+  let keepalive = null;
+  let reconnectAttempt = 0;
+  const RECONNECT_BASE_MS = 2000;
+  const RECONNECT_MAX_MS = 60000;
+  const NO_PEER_MSG = "상대 재접속 대기 중. 메시지를 보낼 수 없습니다.";
 
   let sharedKey = null;
   let peerName = "상대";
   let peerNameConfirmed = false;
+
+  const resetPeerState = () => {
+    sharedKey = null;
+    peerName = "상대";
+    peerNameConfirmed = false;
+  };
   let bellEnabled = false;
   let pendingDelSelection = null;
   let unreadCount = 0;
@@ -853,7 +864,7 @@ const main = async () => {
     return String(raw);
   };
 
-  ws.addEventListener("message", (event) => {
+  const handleMessage = (event) => {
     let msg;
     try {
       msg = JSON.parse(decodeFrame(event.data));
@@ -864,79 +875,85 @@ const main = async () => {
     try {
       if (msg.type === "peer") handlePeer(msg);
       else if (msg.type === "bye") {
-        above.warn(`${peerName}가 나갔습니다.`);
-        try {
-          ws.close(1000);
-        } catch {}
+        above.warn(`${peerName}가 나갔습니다. 재접속 대기 중...`);
+        resetPeerState();
       } else if (msg.type === "msg") handleMsg(msg);
     } catch (err) {
       above.err(`[오류] ${err.message}`);
     }
-  });
+  };
 
-  ws.addEventListener("error", (event) => {
+  const handleError = (event) => {
     const err = event?.error;
-    const topMsg =
-      err?.message ||
-      event?.message ||
-      err?.code ||
-      err?.name ||
-      "알 수 없는 오류";
-    console.error(`${C.err}연결 실패: ${topMsg}${C.reset}`);
-    let cur = err?.cause;
-    let depth = 0;
-    while (cur && depth < 5) {
-      const detail =
-        cur.code || cur.message || cur.name || String(cur).slice(0, 200);
-      console.error(`${C.gray}  ↳ ${detail}${C.reset}`);
-      cur = cur.cause;
-      depth++;
-    }
-    if (event?.target?.url) {
-      console.error(`${C.gray}  url: ${event.target.url}${C.reset}`);
-    }
-    console.error(`${C.gray}  node: ${process.versions.node}${C.reset}`);
-    console.error(`${C.gray}  platform: ${process.platform}${C.reset}`);
-    console.error(
-      `${C.gray}확인사항:` +
-        `\n  - 인터넷 연결` +
-        `\n  - Node 22 이상 (node -v)` +
-        `\n  - 방화벽/프록시/AV가 wss:// 또는 self-signed cert 검사로 차단하는지` +
-        `\n  - VPN / 회사 네트워크 (TLS MITM)${C.reset}`
-    );
-    process.exit(1);
-  });
+    const msg = err ? describeError(err) : event?.message || "알 수 없는 오류";
+    above.warn(`연결 오류: ${msg}`);
+  };
 
-  ws.addEventListener("close", (event) => {
+  const scheduleReconnect = (code, reason) => {
+    resetPeerState();
+    reconnectAttempt++;
+    const delay = Math.min(
+      RECONNECT_BASE_MS * Math.pow(2, reconnectAttempt - 1),
+      RECONNECT_MAX_MS
+    );
+    above.warn(
+      `연결 끊김 (code=${code || "?"}${reason ? ` reason="${reason}"` : ""}). ` +
+        `${Math.round(delay / 1000)}초 후 재연결 시도 (${reconnectAttempt}회)...`
+    );
+    setTimeout(connectWs, delay);
+  };
+
+  const exitWith = (msg, code) => {
+    console.log(msg);
+    process.exit(code);
+  };
+
+  const handleClose = (event) => {
     clearTitleOnExit();
+    clearInterval(keepalive);
+    keepalive = null;
     const reason = event?.reason || "";
     const code = event?.code;
+
+    if (reason === "bad token" || reason === "bad pk") {
+      return exitWith(`${C.err}연결 거부: ${reason}${C.reset}`, 1);
+    }
     if (reason === "room full" || (code === 1008 && !sharedKey)) {
-      console.log(
+      return exitWith(
         `${C.warn}방이 이미 2명으로 가득 찼습니다.${C.reset}\n` +
           `${C.gray}  - 다른 방 이름으로 접속: node chat.js <다른이름>\n` +
-          `  - 또는 30초 정도 기다린 후 재시도 (끊긴 세션 정리)${C.reset}`
+          `  - 또는 30초 정도 기다린 후 재시도${C.reset}`,
+        1
       );
-    } else if (reason === "bad token" || reason === "bad pk") {
-      console.log(`${C.err}연결 거부: ${reason}${C.reset}`);
-    } else if (reason === "server shutting down" || code === 1001) {
-      console.log(`${C.warn}서버 재시작 중. 잠시 후 재시도.${C.reset}`);
-    } else if (!sharedKey) {
-      console.log(
-        `${C.gray}연결 종료 (핸드셰이크 전, code=${code || "?"})${C.reset}`
-      );
-    } else {
-      console.log(`${C.gray}연결 종료${C.reset}`);
     }
-    process.exit(0);
-  });
+    scheduleReconnect(code, reason);
+  };
 
-  const keepalive = setInterval(() => {
-    fetch(httpUrl).catch(() => {});
-  }, KEEPALIVE_MS);
-  ws.addEventListener("close", () => clearInterval(keepalive));
+  const connectWs = () => {
+    clearInterval(keepalive);
+    ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
+    ws.addEventListener("open", () => {
+      if (reconnectAttempt > 0) {
+        above.warn(`재연결 성공 (${reconnectAttempt}회 시도 끝)`);
+      }
+      reconnectAttempt = 0;
+    });
+    ws.addEventListener("message", handleMessage);
+    ws.addEventListener("error", handleError);
+    ws.addEventListener("close", handleClose);
+    keepalive = setInterval(() => {
+      fetchWithTimeout(httpUrl, 15000).catch(() => {});
+    }, KEEPALIVE_MS);
+  };
+
+  connectWs();
 
   const sendEncrypted = (payload) => {
+    if (!sharedKey) {
+      above.warn(NO_PEER_MSG);
+      return;
+    }
     const iv = crypto.randomBytes(12);
     const c = crypto.createCipheriv("aes-256-gcm", sharedKey, iv);
     const enc = Buffer.concat([
@@ -1241,7 +1258,7 @@ const main = async () => {
     }
   };
 
-  ws.addEventListener("close", () => {
+  process.on("exit", () => {
     if (rainbowInterval) clearInterval(rainbowInterval);
   });
 
@@ -1263,7 +1280,10 @@ const main = async () => {
         else above.warn(`알 수 없는 명령: /${cmd}. /help`);
         return;
       }
-      if (!sharedKey) return rl.prompt();
+      if (!sharedKey) {
+        above.warn(NO_PEER_MSG);
+        return rl.prompt();
+      }
       if (!line.trim()) return rl.prompt();
       const truncated = line.length > MAX_LINE;
       const text = truncated ? line.slice(0, MAX_LINE) : line;
@@ -1292,7 +1312,7 @@ const main = async () => {
     clearTitleOnExit();
     releaseLock(token);
     try {
-      ws.close(1000);
+      if (ws) ws.close(1000);
     } catch {}
     process.exit(0);
   };

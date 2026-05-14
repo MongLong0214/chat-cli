@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.5
+- **자동 재연결** (지수 backoff 2s → 4s → 8s → ... → 60s cap):
+  - WS 비정상 종료(서버 재시작, 네트워크 단절, sleep 등) 시 본인 chat 종료 안 함
+  - 자동으로 새 WS 연결 시도 + 재핸드셰이크 → 메시지 송수신 자동 복구
+  - 사용자 /quit 또는 bad token/room full 등 영구 사유는 정상 종료 (재연결 X)
+  - 연결 끊김 시 `연결 끊김 (code=X reason="Y"). N초 후 재연결 시도 (N회)...`
+  - 재연결 성공 시 `재연결 성공 (N회 시도 끝)` 출력
+- error 핸들러 `process.exit(1)` 제거 — close 핸들러가 자동 재연결 처리
+
+## 1.4.4
+- 상대가 나가도 본인 chat 종료 안 됨 (자동 재접속 대기):
+  - 기존: 상대 /quit → 본인 ws.close(1000) → process.exit(0)
+  - 수정: 상대 /quit → "재접속 대기 중..." 표시 + sharedKey 리셋, chat 유지
+  - 상대 재접속 시 자동 새 핸드셰이크 (X25519 ECDH 재실행) → "✓ 연결됨" 다시 출력
+  - 재접속 대기 중 메시지 입력 시 안내 메시지
+
 ## 1.4.3
 - 60초 알림 throttle 진짜 fix:
   - 1.3.7부터 `markRead`가 `lastNotifyTime = 0` 리셋해서 throttle 무력화하던 버그
