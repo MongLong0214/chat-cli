@@ -4,7 +4,8 @@ import { parse } from "url";
 
 const port = process.env.PORT || 8080;
 const MAX_PAYLOAD = 64 * 1024;
-const HEARTBEAT_MS = 10_000;
+const HEARTBEAT_MS = 30_000;
+const MAX_MISSED_PONGS = 2;
 const rooms = new Map();
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
@@ -55,9 +56,9 @@ wss.on("connection", (ws, req) => {
 
   if (peers.length >= 2) return ws.close(1008, "room full");
 
-  ws.isAlive = true;
+  ws.missedPongs = 0;
   ws.on("pong", () => {
-    ws.isAlive = true;
+    ws.missedPongs = 0;
   });
   ws.on("error", (err) => log("ws error", token.slice(0, 4), err.message));
 
@@ -115,13 +116,13 @@ wss.on("connection", (ws, req) => {
 
 const heartbeat = setInterval(() => {
   for (const ws of wss.clients) {
-    if (ws.isAlive === false) {
+    if (ws.missedPongs >= MAX_MISSED_PONGS) {
       try {
         ws.terminate();
       } catch {}
       continue;
     }
-    ws.isAlive = false;
+    ws.missedPongs = (ws.missedPongs || 0) + 1;
     try {
       ws.ping();
     } catch {}

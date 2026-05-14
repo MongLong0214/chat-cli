@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.6 (server only — 클라이언트 update 불필요)
+- server.js heartbeat 완화 (수시 1006 abnormal closure 현상 해결):
+  - HEARTBEAT_MS 10s → 30s
+  - `isAlive` boolean → `missedPongs` counter (2회 연속 miss 시만 terminate)
+  - 결과: terminate 윈도우 10~20s → 30~60s. Node 22 built-in WebSocket의 일시적 pong 지연 흡수
+  - 친구 PC chat.js 변경 없음 — Render auto-deploy로 끝
+
 ## 1.4.5
 - **자동 재연결** (지수 backoff 2s → 4s → 8s → ... → 60s cap):
   - WS 비정상 종료(서버 재시작, 네트워크 단절, sleep 등) 시 본인 chat 종료 안 함
