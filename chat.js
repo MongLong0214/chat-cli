@@ -22,7 +22,7 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.4.5";
+const VERSION = "1.4.7";
 const REPO = "MongLong0214/chat-cli";
 const REPO_RAW = `https://raw.githubusercontent.com/${REPO}/main`;
 const UPDATE_URL_CHAT = `${REPO_RAW}/chat.js`;
@@ -601,10 +601,59 @@ const main = async () => {
   let peerName = "상대";
   let peerNameConfirmed = false;
 
+  let peerTyping = false;
+  let typingAnimTimer = null;
+  let typingRainbowOffset = 0;
+  let typingAutoOffTimer = null;
+  let myTypingActive = false;
+  const TYPING_TEXT = "✨ 흠냐리 흠냥냐~";
+  const TYPING_IDLE_OFF_MS = 1500;
+  const TYPING_AUTO_OFF_MS = 5000;
+
   const resetPeerState = () => {
     sharedKey = null;
     peerName = "상대";
     peerNameConfirmed = false;
+    stopPeerTypingAnim();
+  };
+
+  const startPeerTypingAnim = () => {
+    peerTyping = true;
+    if (typingAnimTimer) return;
+    typingAnimTimer = setInterval(() => {
+      typingRainbowOffset = (typingRainbowOffset + 1) % 360;
+      rl.setPrompt(makePrompt());
+      rl.prompt(true);
+    }, 200);
+  };
+
+  const stopPeerTypingAnim = () => {
+    if (typingAnimTimer) {
+      clearInterval(typingAnimTimer);
+      typingAnimTimer = null;
+    }
+    if (typingAutoOffTimer) {
+      clearTimeout(typingAutoOffTimer);
+      typingAutoOffTimer = null;
+    }
+    if (!peerTyping) return;
+    peerTyping = false;
+    rl.setPrompt(makePrompt());
+    rl.prompt(true);
+  };
+
+  const onPeerTypingOn = () => {
+    if (typingAutoOffTimer) clearTimeout(typingAutoOffTimer);
+    startPeerTypingAnim();
+    typingAutoOffTimer = setTimeout(stopPeerTypingAnim, TYPING_AUTO_OFF_MS);
+  };
+
+  const sendTyping = (on) => {
+    if (!sharedKey) return;
+    if (process.env.TYPING_DEBUG) console.error(`[typing-debug] send on=${on}`);
+    try {
+      sendEncrypted({ kind: "typing", n: myName, on });
+    } catch {}
   };
   let bellEnabled = false;
   let pendingDelSelection = null;
@@ -656,8 +705,12 @@ const main = async () => {
     rl.prompt();
   };
 
-  const makePrompt = () =>
-    `${applyColor(config.myColor, `[${myName}]`, rainbowOffset)} > `;
+  const makePrompt = () => {
+    const typingPart = peerTyping
+      ? `${cycleHues(TYPING_TEXT, typingRainbowOffset, VIVID_HUES)}  `
+      : "";
+    return `${typingPart}${applyColor(config.myColor, `[${myName}]`, rainbowOffset)} > `;
+  };
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -798,6 +851,12 @@ const main = async () => {
         }
         peerNameConfirmed = true;
       }
+    }
+    if (parsed.kind === "typing") {
+      if (process.env.TYPING_DEBUG) console.error(`[typing-debug] recv on=${!!parsed.on}`);
+      if (parsed.on) onPeerTypingOn();
+      else stopPeerTypingAnim();
+      return;
     }
     if (parsed.kind === "del" && Array.isArray(parsed.ids)) {
       let count = 0;
@@ -1258,12 +1317,60 @@ const main = async () => {
     }
   };
 
+  let typingBuffer = "";
+  let typingIdleTimer = null;
+  readline.emitKeypressEvents(process.stdin);
+  process.stdin.on("keypress", (str, key) => {
+    if (!str && !(key && key.name)) return;
+    if (key && (key.name === "return" || key.name === "enter")) {
+      typingBuffer = "";
+      if (myTypingActive) {
+        myTypingActive = false;
+        sendTyping(false);
+      }
+      if (typingIdleTimer) {
+        clearTimeout(typingIdleTimer);
+        typingIdleTimer = null;
+      }
+      return;
+    }
+    if (key && key.ctrl) return;
+    if (key && key.name === "backspace") {
+      typingBuffer = typingBuffer.slice(0, -1);
+    } else if (str) {
+      typingBuffer += str;
+    }
+    if (typingBuffer.startsWith("/")) return;
+    if (typingBuffer.length > 0 && !myTypingActive) {
+      myTypingActive = true;
+      sendTyping(true);
+    } else if (typingBuffer.length === 0 && myTypingActive) {
+      myTypingActive = false;
+      sendTyping(false);
+    }
+    if (typingIdleTimer) clearTimeout(typingIdleTimer);
+    typingIdleTimer = setTimeout(() => {
+      typingIdleTimer = null;
+      if (myTypingActive) {
+        myTypingActive = false;
+        sendTyping(false);
+      }
+    }, TYPING_IDLE_OFF_MS);
+  });
+
   process.on("exit", () => {
     if (rainbowInterval) clearInterval(rainbowInterval);
+    if (typingIdleTimer) clearTimeout(typingIdleTimer);
+    if (typingAnimTimer) clearInterval(typingAnimTimer);
+    if (typingAutoOffTimer) clearTimeout(typingAutoOffTimer);
   });
 
   rl.on("line", (line) => {
     markRead();
+    if (myTypingActive) {
+      myTypingActive = false;
+      sendTyping(false);
+    }
     try {
       if (pendingDelSelection) {
         handleDelSelection(line);

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.7
+- 상대 타이핑 표시 (`✨ 흠냐리 흠냥냐~` 레인보우 애니메이션):
+  - 내가 입력 시작 → 암호화된 `{kind:"typing", on:true}` 송신 (rl.line polling 300ms)
+  - 1.5초 idle 또는 메시지 전송 시 자동 `on:false`
+  - 상대 typing 수신 시 내 prompt 앞에 레인보우 텍스트 표시 + 200ms마다 hue cycle
+  - 5초 후 자동 off (네트워크 단절 안전망)
+  - `/` 시작 슬래시 명령 입력은 typing 송신 안 함
+  - 핸드셰이크 전(sharedKey null) typing silent skip
+  - 1대1 E2E 채널로 encrypted (서버는 typing 사실 모름)
+
 ## 1.4.6 (server only — 클라이언트 update 불필요)
 - server.js heartbeat 완화 (수시 1006 abnormal closure 현상 해결):
   - HEARTBEAT_MS 10s → 30s
