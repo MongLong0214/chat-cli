@@ -97,6 +97,7 @@ node chat.js "wss://chat-cli-7woy.onrender.com#받은토큰"
 | `/notify` | 데스크톱 알림 on/off (Windows 10/11 토스트) |
 | `/img <경로>` | PNG/JPEG 이미지 64×64 모자이크 미리보기 송신 |
 | `/del` | 내가 보낸 최근 메시지 삭제 (양쪽 화면에서 사라짐) |
+| `/hamster` | 햄스터 애니메이션 (나만 보임, `q`/`Esc`로 종료) |
 | `/update` | 최신 버전으로 자동 업데이트 (의존성도 자동 설치) |
 | `/quit` | 종료 |
 

@@ -22,14 +22,14 @@ if (typeof WebSocket === "undefined") {
   process.exit(1);
 }
 
-const VERSION = "1.4.7";
+const VERSION = "1.4.8";
 const REPO = "MongLong0214/chat-cli";
 const REPO_RAW = `https://raw.githubusercontent.com/${REPO}/main`;
 const UPDATE_URL_CHAT = `${REPO_RAW}/chat.js`;
 const UPDATE_URL_CHANGELOG = `${REPO_RAW}/CHANGELOG.md`;
 const UPDATE_URL_PACKAGE = `${REPO_RAW}/package.json`;
 const UPDATE_FETCH_TIMEOUT_MS = 5000;
-const REQUIRED_LIB_FILES = ["bootstrap.js", "image.js", "render.js", "protocol.js", "lock.js"];
+const REQUIRED_LIB_FILES = ["bootstrap.js", "image.js", "render.js", "protocol.js", "lock.js", "hamster.js"];
 
 const fetchWithTimeout = async (url, ms = UPDATE_FETCH_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -603,6 +603,9 @@ const main = async () => {
 
   let peerTyping = false;
   let typingAnimTimer = null;
+  // /hamster 재생 중엔 대체 화면이므로 프롬프트 재그리기를 멈추고 출력은 끝난 뒤 몰아서 표시
+  let overlayActive = false;
+  const overlayQueue = [];
   let typingRainbowOffset = 0;
   let typingAutoOffTimer = null;
   let myTypingActive = false;
@@ -622,6 +625,7 @@ const main = async () => {
     if (typingAnimTimer) return;
     typingAnimTimer = setInterval(() => {
       typingRainbowOffset = (typingRainbowOffset + 1) % 360;
+      if (overlayActive) return;
       rl.setPrompt(makePrompt());
       rl.prompt(true);
     }, 200);
@@ -638,6 +642,7 @@ const main = async () => {
     }
     if (!peerTyping) return;
     peerTyping = false;
+    if (overlayActive) return;
     rl.setPrompt(makePrompt());
     rl.prompt(true);
   };
@@ -718,6 +723,10 @@ const main = async () => {
   });
 
   const printAbovePrompt = (line) => {
+    if (overlayActive) {
+      overlayQueue.push(line);
+      return;
+    }
     const prevRows = rl.prevRows || 0;
     if (prevRows > 0) readline.moveCursor(process.stdout, 0, -prevRows);
     readline.cursorTo(process.stdout, 0);
@@ -1039,6 +1048,7 @@ const main = async () => {
         "  /del                      내가 보낸 최근 메시지 선택 삭제",
         "  /img <경로>               PNG/JPEG 이미지 64x64 모자이크 미리보기 송신",
         "  /diag                     진단 정보 출력 (디버깅용)",
+        "  /hamster                  햄스터 애니메이션 (나만 보임, q/Esc 종료)",
         "  /name <새이름>            내 이름 변경",
         "  /color <me|peer>          내/상대 메시지 색 변경 (번호 선택)",
         `  /bell                     상대 메시지 알림음 (BEL 문자) 토글 (현재: ${bellEnabled ? "on" : "off"})`,
@@ -1192,6 +1202,25 @@ const main = async () => {
         above.err(`전송 실패: ${err.message}`);
       }
     },
+    hamster: async () => {
+      if (!process.stdout.isTTY) return above.warn("터미널(TTY)에서만 재생 가능");
+      let playHamster;
+      try {
+        ({ playHamster } = await import("./lib/hamster.js"));
+      } catch {
+        return above.err("lib/hamster.js 없음 — /update 한 번 더 실행해 주세요");
+      }
+      overlayActive = true;
+      try {
+        await playHamster({ input: process.stdin, output: process.stdout });
+      } finally {
+        overlayActive = false;
+        rl.setPrompt(makePrompt());
+        rl.prevRows = 0;
+        rl.prompt();
+        for (const line of overlayQueue.splice(0)) printAbovePrompt(line);
+      }
+    },
     diag: () => {
       const scriptPath = (() => {
         try { return realpathSync(process.argv[1] || ""); } catch { return process.argv[1] || "?"; }
@@ -1303,6 +1332,7 @@ const main = async () => {
       rainbowInterval = setInterval(() => {
         rainbowOffset = (rainbowOffset + 1) % 10000;
         if (
+          !overlayActive &&
           sharedKey &&
           isAnimatedColor(config.myColor) &&
           rl.line.length === 0

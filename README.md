@@ -92,6 +92,7 @@ node chat.js "wss://chat-cli-7woy.onrender.com#abc..."
 | `/color me` / `/color peer` | 내 / 상대 메시지 색 선택 (빨·주·노·초·파·남·보·흰·레인보우) |
 | `/bell` | 상대 메시지 시 BEL 문자 (터미널 beep) 토글 |
 | `/notify` | OS 데스크톱 알림 + 탭 제목 unread 카운터 토글 (macOS/Linux/Windows) |
+| `/hamster` | 햄스터 애니메이션 (나만 보임, `q`/`Esc` 종료) |
 | `/update` | GitHub에서 최신 chat.js + lib/* + package.json 자동 갱신 + 의존성 자동 설치 |
 
 - URL은 받은 메시지에서 자동 하이라이트 (밑줄 + 파랑)
